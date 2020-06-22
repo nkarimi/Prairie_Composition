@@ -1,0 +1,301 @@
+---
+title: "00c.phyD.SR.boxplots"
+output: html_document
+---
+#SR and PhyD Boxplots similar to Hipp et al. 2018
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(ggplot2)
+library(FD)
+library(cowplot)
+library(lme4)
+library(multcompView)
+library(magrittr)
+library(dplyr)
+library(lmerTest)
+```
+
+#Load PD files
+```{r}
+dat17 <- read.csv(file = "../DATA/2017_VegetationCover/cover.matrix.2019-07-16.csv", as.is = TRUE) #original 2017 data plus as.planted WITH SPRING
+dat17$SR_planted <- 15
+dat18.05 <- read.csv(file = "../DATA/2018_VegetationCover/PD.metrics.2018.05.csv", as.is = TRUE) 
+dat18 <- read.csv(file = "../DATA/2018_VegetationCover/PD.metrics.2018.09.csv", as.is = TRUE) 
+dat19.06 <- read.csv(file = "../DATA/2019_VegetationCover/PD.metrics.2019.06.csv", as.is = TRUE)
+dat19 <- read.csv(file = "../DATA/2019_VegetationCover/PD.metrics.2019.09.csv", as.is = TRUE)
+
+factor(dat17$phy, levels = c('L', 'M', 'H')) -> dat17$phy
+dat17.split <- split(dat17, dat17$type)
+dat18.05.split <- split(dat18.05, dat18.05$type)
+dat18.split <- split(dat18, dat18$type)
+dat19.06.split <- split(dat19.06, dat19.06$type)
+dat19.split <- split(dat19, dat19$type)
+```
+
+#Plot PhyD and SR by phyD
+## SPECIES RICHNESS
+```{r}
+#############SPECIES RICHNESS #######################################
+Srichness <- as.data.frame(cbind("planted"=dat17.split$Plug$SR_planted, "2017"=dat17.split$Plug$SR_observed, "code"=dat17.split$Plug$phyD, "2018.06" = dat18.05.split$Plug$SR_observed, "2018.09"=dat18.split$Plug$SR_observed, "2019.06"= dat19.06.split$Plug$SR_observed, "2019.09"= dat19.split$Plug$SR_observed))
+factor(Srichness$code, levels = c('L', 'M', 'H')) -> Srichness$code
+Srichness.m <- melt(Srichness, id.vars='code', measure.vars=c('planted','2017', "2018.06", '2018.09', "2019.06", "2019.09"))
+as.numeric(as.character(Srichness.m$value)) -> Srichness.m$value
+
+ggplot(Srichness.m, aes(x=variable, y=value)) + geom_boxplot() +facet_grid(.~code) + theme_bw() -> Srichness.plot
+Srichness.plot <- Srichness.plot + labs(y ="SR observed", x="") + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) 
+
+for (facetk in as.character(unique(Srichness.m$code))) {   
+  subdf <- subset(Srichness.m, code==facetk)
+  model=lm(SR ~ year:phyD, data=df.pa.plug)
+  ANOVA=aov(model)
+  TUKEY <- TukeyHSD(ANOVA)#
+
+  labels <- generate_label_df(TUKEY , TUKEY$`year:phyD`)
+}
+#Add letters for significance:
+generate_label_df <- function(TUKEY, variable){
+  # Extract labels and factor levels from Tukey post-hoc 
+  Tukey.levels <- variable[,4]
+  Tukey.labels <- data.frame(multcompLetters(Tukey.levels)['Letters'])
+  #put the labels in the same order as in the boxplot :
+  Tukey.labels$treatment=rownames(Tukey.labels)
+  Tukey.labels=Tukey.labels[order(Tukey.labels$treatment) , ]
+  return(Tukey.labels)
+}
+#ggsave(Srichness.plot, file="../OUT/SRplots.pdf", width=180, units = "mm")
+Srichness.m[ which(Srichness.m$variable=="2019.09"), ] -> phy.diff
+model <- lm(value ~ code, data=phy.diff)
+anova(model)
+```
+#SR by FD class
+```{r}
+#############SPECIES RICHNESS #######################################
+Srichness <- as.data.frame(cbind("planted"=dat17.split$Plug$SR_planted, "2017"=dat17.split$Plug$SR_observed, "FD"=dat17.split$Plug$trtD, "2018.06" = dat18.05.split$Plug$SR_observed, "2018.09"=dat18.split$Plug$SR_observed, "2019.06"= dat19.06.split$Plug$SR_observed, "2019.09"= dat19.split$Plug$SR_observed))
+factor(Srichness$FD, levels = c('L','H')) -> Srichness$FD
+SR.m <- melt(Srichness, id.vars='FD', measure.vars=c('planted','2017', "2018.06", '2018.09', "2019.06", "2019.09"))
+as.numeric(as.character(SR.m$value)) -> SR.m$value
+
+factor(SR.m$FD, levels = c('L','H', ' ')) -> SR.m$FD2
+
+ggplot(SR.m, aes(x=variable, y=value)) + geom_boxplot() + facet_wrap(~FD2,ncol=3,drop=FALSE) + theme_bw() -> SR_FDplot
+
+SR_FDplot <- SR_FDplot + labs(y ="SR observed", x="") + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) 
+
+plot_grid(Srichness.plot, SR_FDplot, labels = "auto", ncol=1) -> Fig2.SR
+Fig2.SR
+#ggsave(Fig2.SR, file="../OUT/Fig2.SR.pdf")
+#ggsave(SR_FDplot, file="../OUT/Fig2.SRb.pdf")
+
+#Add letters for significance:
+generate_label_df <- function(TUKEY, variable){
+  # Extract labels and factor levels from Tukey post-hoc 
+  Tukey.levels <- variable[,4]
+  Tukey.labels <- data.frame(multcompLetters(Tukey.levels)['Letters'])
+  #put the labels in the same order as in the boxplot :
+  Tukey.labels$treatment=rownames(Tukey.labels)
+  Tukey.labels=Tukey.labels[order(Tukey.labels$treatment) , ]
+  return(Tukey.labels)
+}
+for (facetk in as.character(unique(SR.m$FD))) {   
+  subdf <- subset(SR.m, code==facetk)
+  model=lm(value ~ variable:FD, data=SR.m)
+  ANOVA=aov(model)
+  TUKEY <- TukeyHSD(ANOVA)#
+  labelsplug <- generate_label_df(TUKEY , TUKEY$`variable:FD`)
+}
+#compare differences between classes for final survey only:
+SR.m[ which(SR.m$variable=="2019.09"), ] -> fd.diff
+model <- lm(value ~ FD, data=fd.diff)
+```
+###Faith's PD and PD-ses
+```{r}
+######################Faith's PD
+fPD <- as.data.frame(cbind("planted" = dat17.split$Plug$PD_planted, "2017"= dat17.split$Plug$PD_observed, "phyD"= dat17.split$Plug$phyD, "2018.06"=dat18.05.split$Plug$PD_observed, "2018.09"=dat18.split$Plug$PD_observed, "2019.06" = dat19.06.split$Plug$PD_observed, "2019.09" = dat19.split$Plug$PD_observed))
+
+as.numeric(as.character(fPD$planted)) -> fPD$planted
+as.numeric(as.character(fPD$'2017')) -> fPD$'2017'
+as.numeric(as.character(fPD$'2018.06')) -> fPD$'2018.06'
+as.numeric(as.character(fPD$'2018.09')) -> fPD$'2018.09'
+as.numeric(as.character(fPD$'2019.06')) -> fPD$'2019.06'
+as.numeric(as.character(fPD$'2019.09')) -> fPD$'2019.09'
+
+factor(fPD$phyD, levels = c('L', 'M', 'H')) -> fPD$phyD
+dat.fPD <- melt(fPD, id.vars='phyD', measure.vars=c('planted','2017', "2018.06",'2018.09', "2019.06", "2019.09"))
+
+ggplot(dat.fPD, aes(x=variable, y=value)) +geom_boxplot() +facet_grid(.~phyD) +
+  theme_bw() -> PD.Plot
+PD.Plot <- PD.Plot + labs(
+  x="year",  y ="Faith's PD")  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+
+ggsave(filename = "../OUT/FaithsPD.Plot.pdf", plot = PD.Plot, height = 4, width=8)
+
+##############PD-ses############################
+##########################################
+##############NOTE: SAME VARIABLES AS ABOVE
+
+fPD <- as.data.frame(cbind("planted" = dat17.split$Plug$PD_SES_planted, "2017"= dat17.split$Plug$PD_SES_observed, "phyD"= dat17.split$Plug$phyD, "2018.06"=dat18.05.split$Plug$PD_SES_observed, "2018.09"=dat18.split$Plug$PD_SES_observed, "2019.06" = dat19.06.split$Plug$PD_SES_observed, "2019.09" = dat19.split$Plug$PD_SES_observed))
+
+as.numeric(as.character(fPD$planted)) -> fPD$planted
+as.numeric(as.character(fPD$'2017')) -> fPD$'2017'
+as.numeric(as.character(fPD$'2018.06')) -> fPD$'2018.06'
+as.numeric(as.character(fPD$'2018.09')) -> fPD$'2018.09'
+as.numeric(as.character(fPD$'2019.06')) -> fPD$'2019.06'
+as.numeric(as.character(fPD$'2019.09')) -> fPD$'2019.09'
+
+factor(fPD$phyD, levels = c('L', 'M', 'H')) -> fPD$phyD
+dat.fPD <- melt(fPD, id.vars='phyD', measure.vars=c('planted','2017', "2018.06",'2018.09', "2019.06", "2019.09"))
+
+ggplot(dat.fPD, aes(x=variable, y=value)) +geom_boxplot() +facet_grid(.~phyD) +
+  theme_bw() -> PD.Plot
+PD.Plot <- PD.Plot + labs(
+  x="year",  y ="PD_SES")  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+
+#ggsave(filename = "../OUT/FaithsPD-SES.Plot.png", plot = PD.Plot, height = 4, width=8)
+```
+
+#MPD
+```{r}
+######################MPD OBSERVED ####################
+############################################################
+#PD.phyd <- as.data.frame(cbind("planted" = dat17.split$Plug$MPD_planted, "2017"= dat17.split$Plug$MPD_observed, "code"= dat17.split$Plug$phyD, "2018.06"=dat18.05.split$Plug$MPD_observed, "2018.09"=dat18.split$Plug$MPD_observed, "2019.06" = dat19.06.split$Plug$MPD_observed, "2019.09" = dat19.split$Plug$MPD_observed))
+
+MPD.phyd <- as.data.frame(cbind("planted" = dat17.split$Plug$MPD_SES_planted, "2017"= dat17.split$Plug$MPD_SES_observed, "phyD"= dat17.split$Plug$phyD, "2018.06"=dat18.05.split$Plug$MPD_SES_observed, "2018.09"=dat18.split$Plug$MPD_SES_observed, "2019.06" = dat19.06.split$Plug$MPD_SES_observed, "2019.09" = dat19.split$Plug$MPD_SES_observed))
+
+as.numeric(as.character(MPD.phyd$planted)) -> MPD.phyd$planted
+as.numeric(as.character(MPD.phyd$'2017')) -> MPD.phyd$'2017'
+as.numeric(as.character(MPD.phyd$'2018.06')) -> MPD.phyd$'2018.06'
+as.numeric(as.character(MPD.phyd$'2018.09')) -> MPD.phyd$'2018.09'
+as.numeric(as.character(MPD.phyd$'2019.06')) -> MPD.phyd$'2019.06'
+as.numeric(as.character(MPD.phyd$'2019.09')) -> MPD.phyd$'2019.09'
+
+factor(MPD.phyd$phyD, levels = c('L', 'M', 'H')) -> MPD.phyd$phyD
+dat.mpd <- melt(MPD.phyd, id.vars='phyD', measure.vars=c('planted','2017', "2018.06",'2018.09', "2019.06", "2019.09"))
+
+ggplot(dat.mpd, aes(x=variable, y=value)) +geom_boxplot() +facet_grid(.~phyD) +
+  theme_bw() -> MPD.Plot
+MPD.Plot <- MPD.Plot + labs(
+  x="year",  y ="MPD_ses")  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+
+#ggsave(filename = "../OUT/MPD.Plug.png", plot = Plug.MPD.Plot, height = 4, width=8)
+
+####################Tukey test for MPDses Observed:####################
+mpd_ses.aov <- aov(value ~ variable:phyD, data=dat.mpd) #mpd_ses
+TukeyHSD(mpd_ses.aov)
+
+#Add letters for significance:
+generate_label_df <- function(TUKEY, variable){
+  # Extract labels and factor levels from Tukey post-hoc 
+  Tukey.levels <- variable[,4]
+  Tukey.labels <- data.frame(multcompLetters(Tukey.levels)['Letters'])
+  #I need to put the labels in the same order as in the boxplot :
+  Tukey.labels$treatment=rownames(Tukey.labels)
+  Tukey.labels=Tukey.labels[order(Tukey.labels$treatment) , ]
+  return(Tukey.labels)
+}
+
+for (facetk in as.character(unique(dat.mpd$phyD))) {   
+  subdf <- subset(dat.mpd, code==facetk)
+  model=lm(value ~ variable:phyD, data=dat.mpd)
+  ANOVA=aov(model)
+  TUKEY <- TukeyHSD(ANOVA)#
+  labelsplug <- generate_label_df(TUKEY , TUKEY$`variable:phyD`)
+}
+```
+
+```{r}
+#########################################
+######### MNTD_SES 
+############################################################
+MNTD_SES.phyd <- as.data.frame(cbind("planted"=dat17.split$Plug$MNTD_SES_planted, "2017"=dat17.split$Plug$MNTD_SES_observed, "phyD"=dat17.split$Plug$phyD,"2018.06"=dat18.05.split$Plug$MNTD_SES_observed, "2018.09"=dat18.split$Plug$MNTD_SES_observed, "2019.06"=dat19.06.split$Plug$MNTD_SES_observed, "2019.09"=dat19.split$Plug$MNTD_SES_observed))
+
+factor(MNTD_SES.phyd$phyD, levels = c('L', 'M', 'H')) -> MNTD_SES.phyd$phyD
+
+mntd.m <- melt(MNTD_SES.phyd, id.vars='phyD', measure.vars=c('planted','2017','2018.06',"2018.09" ,"2019.06", "2019.09"))
+as.numeric(as.character(mntd.m$value)) -> mntd.m$value
+
+ggplot(mntd.m, aes(x=variable, y=value)) +geom_boxplot() +facet_grid(.~phyD) +
+  theme_bw() -> MNTD.plot
+MNTD.plot <- MNTD.plot + labs(y ="MNTD_ses", x="") + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+
+#ggsave(filename = "../OUT/MNTDses.Plug.png", plot = MNTD.plot, height = 4, width=8)
+mntd.aov <- aov(value ~ variable:phyD, data=mntd.m) #mntd.m variable = year; value=mntd
+TukeyHSD(mntd.aov)
+#Add letters for significance:
+generate_label_df <- function(TUKEY, variable){
+  # Extract labels and factor levels from Tukey post-hoc 
+  Tukey.levels <- variable[,4]
+  Tukey.labels <- data.frame(multcompLetters(Tukey.levels)['Letters'])
+  #I need to put the labels in the same order as in the boxplot :
+  Tukey.labels$treatment=rownames(Tukey.labels)
+  Tukey.labels=Tukey.labels[order(Tukey.labels$treatment) , ]
+  return(Tukey.labels)
+}
+
+for (facetk in as.character(unique(mntd.m$phyD))) {   
+  subdf <- subset(mntd.m, code==facetk)
+  model=lm(value ~ variable:phyD, data=mntd.m)
+  ANOVA=aov(model)
+  TUKEY <- TukeyHSD(ANOVA)#
+  labelsplug <- generate_label_df(TUKEY , TUKEY$`variable:phyD`)
+}
+```
+
+```{r}
+plot_grid(Srichness.plot, MNTD.plot, MPD.Plot, ncol=1, labels="auto") -> Fig2.SR_PhyD.png
+#ggsave(Fig2.SR_PhyD.png, file="../OUT/Fig2.SR_PhyD.pdf")
+```
+
+##Test for significance in SR PLUG
+```{r}
+#############################
+#Our models: #SR_observed ~ year + MPD_as_planted
+#SR_observed ~ year + FD_obs17
+#SR_observed ~ year + (FD_obs17 | MPD_obs17)
+
+SRobs <- c(dat17.split$Plug$SR_planted, dat17.split$Plug$SR_observed, dat18.05.split$Plug$SR_observed, dat18.split$Plug$SR_observed, dat19.06.split$Plug$SR_observed, dat19.split$Plug$SR_observed)
+
+df.pa.plug <- df.pa.plug[with(df.pa.plug, order(year, plot)),] # order by year and plot
+df.pa.plug$SR <- SRobs
+
+#take dat17.split$Plug$MPD_planted and merge by plot#
+df.pa.plug <- merge(df.pa.plug, dat17.split$Plug[, c("plot", "MPD_planted")], by="plot")
+df.pa.plug <- merge(df.pa.plug, dat17.split$Plug[, c("plot", "MNTD_planted")], by="plot")
+df.pa.plug <- merge(df.pa.plug, dat17.split$Plug[, c("plot", "PD_planted")], by="plot")
+
+```
+
+```{r}
+#ADD FD to model
+df.pa.plug <- df.pa.plug %>%
+  select(MNTD_planted, MPD_planted, PD_planted, SR, everything())
+df.pa.plug.copy <- df.pa.plug
+
+traits.mat <- read.csv('../DATA/ImputedMiceTraits.2016-01-06.csv', as.is = T, row.names = 1)
+rownames(traits.mat)[which(rownames(traits.mat) == "Symphyotrichum_novae-angliae")] <-
+  "Symphyotrichum_novae.angliae"
+rownames(traits.mat) -> traits.mat$Species
+
+MICEtraits.mat <- traits.mat %>% filter (Species %in% colnames(df.pa.plug[9:ncol(df.pa.plug)]))
+MICEtraits.mat$Species -> rownames(MICEtraits.mat)
+MICEtraits.mat <- subset(MICEtraits.mat, select = -Species)
+dist(MICEtraits.mat) -> dis.trait.diss
+as.matrix(df.pa.plug[9:ncol(df.pa.plug)]) -> comm
+#Use fdisp measures the functional dispersion (FDis) as in how plots were designed
+fdisp(dis.trait.diss, comm, tol = 1e-07) -> FD.df.pa.plug
+unlist(FD.df.pa.plug$FDis) -> df.pa.plug$FD
+#hill_func(df.pa.plug[,8:length(df.pa.plug)], MICEtraits.mat) #MICE traits
+
+Fmodel.null <- lmer(SR ~ year + MNTD_planted + (1 | plot), data = df.pa.plug)
+Fmodel <- lmer(SR ~ year + FD + MNTD_planted + (1 | plot), data = df.pa.plug)
+#SR.model2 <- lmer(SR ~ year  + MNTD_planted + (1|plot),  data=df.pa.plug, REML=FALSE)
+F.PD.model <- Fmodel <- lmer(SR ~ year + FD*MNTD_planted + (1 | plot), data = df.pa.plug)
+anova(Fmodel, Fmodel.null, SR.model2, F.PD.model)
+###
+SR.modelFULL <- lmer(SR ~ year + FD + MNTD_planted + MPD_planted + PD_planted + (1|plot), data=df.pa.plug, REML=FALSE)
+summary(SR.modelFULL)
+anova(SR.modelFULL)
+```
+
+
