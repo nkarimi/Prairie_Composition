@@ -1,0 +1,66 @@
+---
+title: "relative_traits"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(lme4)
+library(MCMCglmm)
+```
+
+#Does a species' relative trait value (compared to other species in the plot as opposed to absolute trait) predict species performance/success?
+See also GLMM
+```{r}
+#covMat19p #2019.09 covMat for now
+covMat19p <- read.csv(file = "../DATA/2019_VegetationCover/COVER.sppCovMat.2019.09.Plug.csv")
+#rank species based on trait
+rownames(covMat19p) <- covMat19p$plot
+covMat19p[5:ncol(covMat19p)] -> covSimple
+
+spp_per_plot <- apply(covSimple, 1, function(x) colnames(covSimple)[which(!x == "NA")])
+#per coumn of spp_per_plot = spp_per_plot[,1], match species to trait.mat and paste species and SDMC into list
+trait.list <- vector('list', 72)
+for (i in 1:dim(spp_per_plot)[2]) {
+  trait.list[i]  <- list(spp_per_plot[,i])
+}
+#match trait.list[i] with trait.mat$Species and get trait.mat$SDMC values put somewhere
+#subset(traits.mat, Species %in% unlist(trait.list[1])) #this does first column now loop
+new.trait.list <- vector('list', 72)
+new.trait.df <- lapply(1:72, function(x) data.frame())
+
+for (i in 1:length(trait.list)[1]) {
+  subset(traits.mat, Species %in% unlist(trait.list[i])) -> tempplease
+  tempplease -> new.trait.list[[i]]
+}
+#apply rank by SDMC
+for (i in 1:length(new.trait.list)[1]){
+  new.trait.list[[i]]$rank.SDMC <- rank(new.trait.list[[i]]$SDMC)
+}
+#as.data.frame(new.trait.list[[1]]$rank, new.trait.list[[1]]$Species) 
+```
+
+#use glmm traits mat to get relative
+```{r}
+df.cover.na.glm.long.trait$Plug -> df
+rank.df <- df %>%
+  group_by(plot, year) %>%
+  arrange(Species) %>%
+  mutate(rank.sdmc = order(SDMC), rank.vh = rank(vegetativeHeight), rank.lcc=rank(LCC), rank.leafL = rank(leafLength), rank.SLA= rank(SLA))
+
+#run some models
+model.rel <- lmer(value ~ rank.sdmc + rank.vh + rank.lcc + (1|plot), data=rank.df)
+model.rel <- MCMCglmm(value ~ rank.sdmc + rank.vh + rank.lcc + (1|plot), data=rank.df)
+fit.rel <- lm(value ~ rank.sdmc + rank.vh, data=rank.df)
+library( lmerTest)
+summary(fit.rel)
+summary(model.rel) 
+anova(model.rel)
+
+mc.rel <- MCMCglmm(value ~ rank.sdmc + rank.vh + vegetativeHeight + SDMC + rank.lcc + LCC, random=~plot, data=rank.df, nitt = 100000, thin=100, burnin=10000)
+summary(mc.rel)
+
+mc.rel.more <- MCMCglmm(value ~ rank.sdmc + rank.vh + vegetativeHeight + SDMC + rank.lcc + LCC + rank.leafL + rank.SLA + leafLength + SLA, random=~plot, data=rank.df, nitt = 100000, thin=100, burnin=10000)
+summary(mc.rel.more)
+```
