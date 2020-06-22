@@ -1,0 +1,133 @@
+---
+title: "02.winners.losers"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(vegan)
+library(ggplot2)
+library(data.table)
+library(dplyr)
+library(tidyr)
+library("RColorBrewer")
+library("scatterplot3d")
+library(ape)
+library(phytools)
+library(evobiR)
+```
+
+```{r}
+#As planted counts
+as.planted <- read.csv("../DATA/matrix.of.planted.species.csv", as.is = TRUE)
+as.planted <- split(as.planted, as.planted$type)
+as.planted$Plug <- subset(as.planted$Plug, select=-c(type)) 
+p.count <- as.data.frame(colSums(as.planted$Plug[-c(1:3)]) ) #counts 
+
+#Final Survey #REPLACE as needed
+sppCovMat2019.09 <- read.csv("../DATA/2019_VegetationCover/COVER.sppCovMat.2019.09.Plug.csv", as.is = TRUE)
+sppCovMat2019.09[is.na(sppCovMat2019.09)] <- 0
+
+#Convert to presence/absence counts table of species per plot
+df19 <- decostand(x=subset(sppCovMat2019.09, select = Agalinis_tenuifolia:Zizia_aurea), method="pa")
+df19 <- cbind(subset(sppCovMat2019.09, select =plot:Code), df19) #add plot
+df19.P.count <- as.data.frame( colSums(df19[-c(1:4)]) ) #counts
+
+contable.19 <- merge(p.count, df19.P.count, by="row.names")
+names(contable.19) <- c("species", "planted.counts", "counts.2019") 
+
+contable.19 <- contable.19 %>%
+  rowwise() %>% 
+  mutate(
+  prop.plots.occ = (counts.2019/planted.counts)*100)
+contable.19 <- contable.19[order(contable.19$prop.plots.occ,decreasing = TRUE),]
+
+#add a counts.2019.96 and pct_occupied.2019.06
+sppCovMat2019.06 <- read.csv("../DATA/2019_VegetationCover/COVER.sppCovMat.2019.06.Plug.csv", as.is = TRUE)
+sppCovMat2019.06[is.na(sppCovMat2019.06)] <- 0
+df19.06 <- decostand(x=subset(sppCovMat2019.06, select = Agalinis_tenuifolia:Zizia_aurea), method="pa")
+df19.06.counts <- as.data.frame( colSums(df19.06)) #counts
+contable.19.06 <- merge(p.count, df19.06.counts, by="row.names")
+names(contable.19.06) <- c("species", "planted.counts", "counts.2019.06") 
+contable.19.06 <- contable.19.06 %>%
+  rowwise() %>% 
+  mutate(
+  prop.plots.occ = (counts.2019.06/planted.counts)*100)
+
+#merge contable.19 and contable.19.06
+contable.19 <- contable.19[ order(contable.19$species), ]
+contable.19.06 <- contable.19.06[ order(contable.19.06$species), ]
+counts.table2019 <- cbind(contable.19, contable.19.06[,3:4])
+names(counts.table2019) <- c("species", "planted.counts", "counts.2019.09", "prop.plots.occ.2019.09", "counts.2019.06", "prop.plots.occ.2019.06")
+```
+
+#Is the change in proportion of plots occupied significant?  
+fisher extact test per species to test for significant decreases
+```{r}
+#need count contingency table for each species for chisq.test or fisher-exact test for signficance:
+contable.19.06 -> contable
+contable$absent <- 0
+contable$present <- contable$planted.counts - contable$counts.2019.06
+contable[,-4] -> df
+# Tranpose the dataframe to use lapply
+df_t <- t(df)
+colnames(df_t) <- as.vector(df_t[1,])
+df_t <- df_t[-1,]
+class(df_t) <- "numeric"
+# Use lapply to create matrices
+matrix_list <- lapply(1:ncol(df_t), function(x) matrix(as.vector(df_t[,x]), 2, 2, byrow = T))
+names(matrix_list) <- colnames(df_t)
+# Lots of fisher.tests
+lapply(matrix_list, fisher.test) -> f.test.list 
+sapply(f.test.list, "[[", "p.value") -> p.list
+p.adjust(p.list, method = "holm", n = 127) -> p.list.adjusted
+#which(sapply(f.test.list, "[[", "p.value") <= 0.01) -> losers
+#E <- as.data.frame(sapply(f.test.list[losers], function(x) {
+#       (p.value = x$p.value)
+#}))
+#E
+as.data.frame(p.list.adjusted) -> p.list.adjusted
+rownames(p.list.adjusted) -> p.list.adjusted$species
+p.list.adjusted2 <- p.list.adjusted[ order(p.list.adjusted$species), ]
+
+#Make dataframe for supplment:
+#counts.table2019$pvalue_2019.09 <- p.list.adjusted2$p.list.adjusted
+#counts.table2019$pvalue_2019.06 <- p.list.adjusted2$p.list.adjusted
+write.csv(counts.table2019, file="../OUT/SupplmentalFile3.PlotsOccupied.csv")
+```
+
+#Testing for phylogenetic signal of "winners/loser"
+```{r}
+#phylogeny
+phy <- read.tree("../DATA/phylogeny.analyzed.2016-01-05b.tre") 
+phy$tip.label
+#drop tips not in contable
+phy$tip.label[which(phy$tip.label == "Symphyotrichum_novae-angliae")] <-
+  "Symphyotrichum_novae.angliae"
+tree <- drop.tip(phy, which(!phy$tip.label %in% counts.table2019$species)) 
+
+counts.table2019$species -> rownames(counts.table2019)
+ReorderData(tree, counts.table2019) -> counts.table2019.ordered
+prop.occ.sig <- phylosig(tree, counts.table2019.ordered$prop.plots.occ.2019.09, method="lambda", test=TRUE)
+prop.occ.sigK <- phylosig(tree, counts.table2019.ordered$prop.plots.occ.2019.09, method="K", test=TRUE)
+prop.occ.sig
+prop.occ.sigK
+
+propr <- subset(counts.table2019.ordered, select=(prop.plots.occ.2019.09))
+names(propr) <- "%"
+```
+
+#Test for signal on Pct Change
+```{r}
+#Start to Finish
+as.data.frame(pct_changeEnd)-> pct_changeSE
+pct_changeSE$Species -> rownames(pct_changeSE)
+ReorderData(tree, pct_changeSE) -> pct_change_ordered
+change.sig <- phylosig(tree, pct_change_ordered$PctChange, method="lambda", test=TRUE)
+change.sigK <- phylosig(tree, pct_change_ordered$PctChange, method="K", test=TRUE)
+```
+
+
+
+
+
