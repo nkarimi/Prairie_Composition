@@ -1,0 +1,170 @@
+---
+title: "00c.phyD.SR.boxplots"
+output: html_document
+---
+#SR and PhyD Boxplots similar to Hipp et al. 2018
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(ggplot2)
+library(FD)
+library(cowplot)
+library(lme4)
+library(multcompView)
+library(magrittr)
+library(dplyr)
+library(lmerTest)
+library(glmmTMB)
+```
+
+#Load PD files
+```{r}
+dat17 <- read.csv(file = "../DATA/2017_VegetationCover/cover.matrix.2019-07-16.csv", as.is = TRUE) #original 2017 data plus as.planted WITH SPRING
+dat17$SR_planted <- 15
+dat18.05 <- read.csv(file = "../DATA/2018_VegetationCover/PD.metrics.2018.05.csv", as.is = TRUE) 
+dat18 <- read.csv(file = "../DATA/2018_VegetationCover/PD.metrics.2018.09.csv", as.is = TRUE) 
+dat19.06 <- read.csv(file = "../DATA/2019_VegetationCover/PD.metrics.2019.06.csv", as.is = TRUE)
+dat19 <- read.csv(file = "../DATA/2019_VegetationCover/PD.metrics.2019.09.csv", as.is = TRUE)
+
+factor(dat17$phy, levels = c('L', 'M', 'H')) -> dat17$phy
+dat17.split <- split(dat17, dat17$type)
+dat18.05.split <- split(dat18.05, dat18.05$type)
+dat18.split <- split(dat18, dat18$type)
+dat19.06.split <- split(dat19.06, dat19.06$type)
+dat19.split <- split(dat19, dat19$type)
+```
+
+#Plot PhyD and SR by phyD
+## SPECIES RICHNESS
+```{r}
+#############SPECIES RICHNESS #######################################
+Srichness <- as.data.frame(cbind("2016"=dat17.split$Plug$SR_planted, "2017"=dat17.split$Plug$SR_observed, "code"=dat17.split$Plug$phyD, "2018.06" = dat18.05.split$Plug$SR_observed, "2018.09"=dat18.split$Plug$SR_observed, "2019.06"= dat19.06.split$Plug$SR_observed, "2019.09"= dat19.split$Plug$SR_observed))
+factor(Srichness$code, levels = c('L', 'M', 'H')) -> Srichness$code
+Srichness.m <- melt(Srichness, id.vars='code', measure.vars=c('2016','2017', "2018.06", '2018.09', "2019.06", "2019.09"))
+as.numeric(as.character(Srichness.m$value)) -> Srichness.m$value
+
+ggplot(Srichness.m, aes(x=variable, y=value)) + geom_boxplot() +facet_grid(.~code) + theme_bw() -> Srichness.plot
+Srichness.plot <- Srichness.plot + labs(y ="SR observed", x="") + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) 
+
+#ggsave(Srichness.plot, file="../OUT/SRplots.pdf", width=180, units = "mm")
+
+```
+#SR by FD class
+```{r}
+#############SPECIES RICHNESS #######################################
+Srichness <- as.data.frame(cbind("planted"=dat17.split$Plug$SR_planted, "2017"=dat17.split$Plug$SR_observed, "FD"=dat17.split$Plug$trtD, "2018.06" = dat18.05.split$Plug$SR_observed, "2018.09"=dat18.split$Plug$SR_observed, "2019.06"= dat19.06.split$Plug$SR_observed, "2019.09"= dat19.split$Plug$SR_observed))
+factor(Srichness$FD, levels = c('L','H')) -> Srichness$FD
+SR.m <- melt(Srichness, id.vars='FD', measure.vars=c('planted','2017', "2018.06", '2018.09', "2019.06", "2019.09"))
+as.numeric(as.character(SR.m$value)) -> SR.m$value
+
+factor(SR.m$FD, levels = c('L','H', ' ')) -> SR.m$FD2
+
+ggplot(SR.m, aes(x=variable, y=value)) + geom_boxplot() + facet_wrap(~FD2,ncol=3,drop=FALSE) + theme_bw() -> SR_FDplot
+
+SR_FDplot <- SR_FDplot + labs(y ="SR observed", x="") + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) 
+
+plot_grid(Srichness.plot, SR_FDplot, labels = "auto", ncol=1) -> Fig2.SR
+Fig2.SR
+#ggsave(SR_FDplot, file="../OUT/Fig2.SRb.pdf")
+
+#compare differences between classes for final survey only:
+SR.m[ which(SR.m$variable=="2019.09"), ] -> fd.diff
+model <- lm(value ~ FD, data=fd.diff)
+```
+###Faith's PD and PD-ses
+```{r}
+######################Faith's PD
+fPD <- as.data.frame(cbind("planted" = dat17.split$Plug$PD_planted, "2017"= dat17.split$Plug$PD_observed, "phyD"= dat17.split$Plug$phyD, "2018.06"=dat18.05.split$Plug$PD_observed, "2018.09"=dat18.split$Plug$PD_observed, "2019.06" = dat19.06.split$Plug$PD_observed, "2019.09" = dat19.split$Plug$PD_observed))
+
+as.numeric(as.character(fPD$planted)) -> fPD$planted
+as.numeric(as.character(fPD$'2017')) -> fPD$'2017'
+as.numeric(as.character(fPD$'2018.06')) -> fPD$'2018.06'
+as.numeric(as.character(fPD$'2018.09')) -> fPD$'2018.09'
+as.numeric(as.character(fPD$'2019.06')) -> fPD$'2019.06'
+as.numeric(as.character(fPD$'2019.09')) -> fPD$'2019.09'
+
+factor(fPD$phyD, levels = c('L', 'M', 'H')) -> fPD$phyD
+dat.fPD <- melt(fPD, id.vars='phyD', measure.vars=c('planted','2017', "2018.06",'2018.09', "2019.06", "2019.09"))
+
+ggplot(dat.fPD, aes(x=variable, y=value)) +geom_boxplot() +facet_grid(.~phyD) +
+  theme_bw() -> PD.Plot
+PD.Plot <- PD.Plot + labs(
+  x="year",  y ="Faith's PD")  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+
+#ggsave(filename = "../OUT/FaithsPD.Plot.pdf", plot = PD.Plot, height = 4, width=8)
+
+##############PD-ses############################
+
+fPD <- as.data.frame(cbind("planted" = dat17.split$Plug$PD_SES_planted, "2017"= dat17.split$Plug$PD_SES_observed, "phyD"= dat17.split$Plug$phyD, "2018.06"=dat18.05.split$Plug$PD_SES_observed, "2018.09"=dat18.split$Plug$PD_SES_observed, "2019.06" = dat19.06.split$Plug$PD_SES_observed, "2019.09" = dat19.split$Plug$PD_SES_observed))
+
+as.numeric(as.character(fPD$planted)) -> fPD$planted
+as.numeric(as.character(fPD$'2017')) -> fPD$'2017'
+as.numeric(as.character(fPD$'2018.06')) -> fPD$'2018.06'
+as.numeric(as.character(fPD$'2018.09')) -> fPD$'2018.09'
+as.numeric(as.character(fPD$'2019.06')) -> fPD$'2019.06'
+as.numeric(as.character(fPD$'2019.09')) -> fPD$'2019.09'
+
+factor(fPD$phyD, levels = c('L', 'M', 'H')) -> fPD$phyD
+dat.fPD <- melt(fPD, id.vars='phyD', measure.vars=c('planted','2017', "2018.06",'2018.09', "2019.06", "2019.09"))
+
+ggplot(dat.fPD, aes(x=variable, y=value)) + geom_boxplot() + facet_grid(.~phyD) +
+  theme_bw() -> PD.Plot
+PD.Plot <- PD.Plot + labs(
+  x="year",  y ="PD_SES")  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+
+#ggsave(filename = "../OUT/FaithsPD-SES.Plot.png", plot = PD.Plot, height = 4, width=8)
+```
+
+#MPD
+```{r}
+######################MPD OBSERVED ####################
+############################################################
+#PD.phyd <- as.data.frame(cbind("planted" = dat17.split$Plug$MPD_planted, "2017"= dat17.split$Plug$MPD_observed, "code"= dat17.split$Plug$phyD, "2018.06"=dat18.05.split$Plug$MPD_observed, "2018.09"=dat18.split$Plug$MPD_observed, "2019.06" = dat19.06.split$Plug$MPD_observed, "2019.09" = dat19.split$Plug$MPD_observed))
+
+MPD.phyd <- as.data.frame(cbind("planted" = dat17.split$Plug$MPD_SES_planted, "2017"= dat17.split$Plug$MPD_SES_observed, "phyD"= dat17.split$Plug$phyD, "2018.06"=dat18.05.split$Plug$MPD_SES_observed, "2018.09"=dat18.split$Plug$MPD_SES_observed, "2019.06" = dat19.06.split$Plug$MPD_SES_observed, "2019.09" = dat19.split$Plug$MPD_SES_observed))
+
+as.numeric(as.character(MPD.phyd$planted)) -> MPD.phyd$planted
+as.numeric(as.character(MPD.phyd$'2017')) -> MPD.phyd$'2017'
+as.numeric(as.character(MPD.phyd$'2018.06')) -> MPD.phyd$'2018.06'
+as.numeric(as.character(MPD.phyd$'2018.09')) -> MPD.phyd$'2018.09'
+as.numeric(as.character(MPD.phyd$'2019.06')) -> MPD.phyd$'2019.06'
+as.numeric(as.character(MPD.phyd$'2019.09')) -> MPD.phyd$'2019.09'
+
+factor(MPD.phyd$phyD, levels = c('L', 'M', 'H')) -> MPD.phyd$phyD
+dat.mpd <- melt(MPD.phyd, id.vars='phyD', measure.vars=c('planted','2017', "2018.06",'2018.09', "2019.06", "2019.09"))
+
+ggplot(dat.mpd, aes(x=variable, y=value)) +geom_boxplot() +facet_grid(.~phyD) +
+  theme_bw() -> MPD.Plot
+MPD.Plot <- MPD.Plot + labs(
+  x="year",  y ="MPD_ses")  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+
+#ggsave(filename = "../OUT/MPD.Plug.png", plot = Plug.MPD.Plot, height = 4, width=8)
+
+#########
+glmmTMB(value ~ variable:phyD + year, data=dat.mpd)
+
+```
+
+```{r}
+#########################################
+######### MNTD_SES 
+############################################################
+MNTD_SES.phyd <- as.data.frame(cbind("planted"=dat17.split$Plug$MNTD_SES_planted, "2017"=dat17.split$Plug$MNTD_SES_observed, "phyD"=dat17.split$Plug$phyD,"2018.06"=dat18.05.split$Plug$MNTD_SES_observed, "2018.09"=dat18.split$Plug$MNTD_SES_observed, "2019.06"=dat19.06.split$Plug$MNTD_SES_observed, "2019.09"=dat19.split$Plug$MNTD_SES_observed))
+
+factor(MNTD_SES.phyd$phyD, levels = c('L', 'M', 'H')) -> MNTD_SES.phyd$phyD
+
+mntd.m <- melt(MNTD_SES.phyd, id.vars='phyD', measure.vars=c('planted','2017','2018.06',"2018.09" ,"2019.06", "2019.09"))
+as.numeric(as.character(mntd.m$value)) -> mntd.m$value
+
+ggplot(mntd.m, aes(x=variable, y=value)) +geom_boxplot() +facet_grid(.~phyD) +
+  theme_bw() -> MNTD.plot
+MNTD.plot <- MNTD.plot + labs(y ="MNTD_ses", x="") + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+
+#ggsave(filename = "../OUT/MNTDses.Plug.png", plot = MNTD.plot, height = 4, width=8)
+```
+
+```{r}
+plot_grid(Srichness.plot, MNTD.plot, MPD.Plot, ncol=1, labels="auto") -> Fig2.SR_PhyD.png
+#ggsave(Fig2.SR_PhyD.png, file="../OUT/Fig2.SR_PhyD.pdf")
+```
