@@ -1,0 +1,341 @@
+---
+title: "01a.ordi.plot.trait.space"
+output: html_document
+---
+
+#### Ordination of plots by traits (weighted by species abundance)
+####Non-Imputed Traits Matrix
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(data.table)
+library(dplyr)
+library(cowplot)
+library(tidyr)
+library(ggplot2)
+library(vegan)
+library(grid)
+library(vegan)
+library(FD)
+#library(geiger)
+#library(ggrepel)
+#library(magrittr)
+#library(latex2exp)
+#library(reshape2)#library(ape)
+#library(picante)
+```
+
+```{r}
+#See 01a.ordi.plots.MICEtraits.Rmd for ordinations with MICE traits
+
+#Load Cover data: use 00b.load.for.analyses
+#NA cover matix filtered for species planted only
+#Convert trait matrix 
+spp.trans <- read.delim('../DATA/sp.trans.tsv.txt', as.is = T)
+spp.trans <- spp.trans[!(spp.trans$CODE == ""), ]
+traits.full <- read.delim('../DATA/prairie.spp.list.v11.2016-01-05.tsv', as.is = T, row.names = 1)
+#select these traits to be consistent with traits.mat
+select.traits <- subset(traits.full, select=c(seedMass, LDMC, SLA, LNC, LCC, LPC, SDMC,circularity, flowerHeight,vegetativeHeight, leafLength, leafThickness, leafWidth, petioleLength, photosyntheticPathway, genome_Use, nFixer, adventitious, primary, bulbs, corms, fibrous, rhizomes, stolons, tubers))
+#convert photosynthetic pathway:
+select.traits$photosyntheticPathway <- as.numeric(sub("C3", "1", select.traits$photosyntheticPathway))
+select.traits$photosyntheticPathway <- as.numeric(sub("C4", "0", select.traits$photosyntheticPathway))
+# the first col in test.traits isn't named because they are row names. add it:
+setDT(select.traits, keep.rownames = "Species")[]
+indexSp <- match(select.traits$Species, spp.trans$Scientific.Name, nomatch = 0 )
+select.traits$Species[indexSp != 0] <- spp.trans$treeName[indexSp] 
+##Filter as needed
+traits127 <- select.traits %>% filter (Species %in% names(df.cover[8:length(df.cover)]))
+########
+#merge
+plots.traits127 <- df.cover.long2 %>% 
+            left_join(traits127, by = "Species")
+head(plots.traits127) 
+```
+
+####Average traits per plot weighted by species abudance
+```{r weight}
+####Calculate weighted average of traits across species per plot by relative abundance 
+weighted.traits.by.plot <- setDT(plots.traits127)[, lapply(.SD, function(x) weighted.mean(x, value, na.rm = TRUE)), by = c("year", "plot", "type", "Code"), .SDcols  = seedMass:genome_Use]
+weighted.traits <- weighted.traits.by.plot
+```
+
+##Ordination
+###Plot shifts in trait space (weighted average)
+```{r nmds}
+caltmds <- metaMDS(weighted.traits[,-c(1:4)], k=3, maxit=15000) #take out the columns (year, plot, type, PDcode)
+traits.new <- na.omit(weighted.traits[5:ncol(weighted.traits)])
+caltmds <- metaMDS(traits.new[,-c(1:4)], k=2, maxit=100000)
+#caltmds <- metaMDS(traits.new[,-c(1:4)], k=3, maxit=10000, previous.best = caltmds)
+Ordi.traits <- scores(caltmds) #used for randomization tests
+stressplot(caltmds) #stress=0.1398953
+################
+#Phylo_Group = weighted.traits$Code
+#NMDS = data.frame(MDS1 = caltmds$points[,1], MDS2 = caltmds$points[,2], group=Phylo_Group, year= as.factor(weighted.traits$year), plot=weighted.traits$plot)
+scores(caltmds) -> NMDS
+NMDSv <- cbind(NMDS, weighted.traits[,1:4])
+
+NMDSv$phyD <- data.frame(phyD = substr(NMDSv$Code,1,1)) #split code
+as.character(unlist(NMDSv$phyD)) -> NMDSv$phyD #weird datatype issues to fix for below
+NMDSv <- subset(NMDSv, select=-c(Code))
+
+means.code <- NMDSv %>% #remove tD col
+    group_by(phyD, year, type) %>% 
+    summarise_all(funs(mean))
+
+ggplot() + 
+  stat_ellipse(data=NMDSv, aes(x=NMDS1,y=NMDS2, color= phyD)) +
+   geom_point(data = NMDSv, aes(NMDS1, NMDS2, color = phyD, shape=type),size=3) +
+   geom_path(data=means.code, aes(x = NMDS1, y = NMDS2, group = phyD), arrow = arrow(length = unit(0.25, "cm")), colour="black", size = 1) + 
+   labs(title = "Mean Trait (Non-imputed) Shifts", color = "PhyD Group\n") + theme_bw() 
+
+NMDSv.split <- split(NMDSv, NMDSv$type)
+means.code.split <- split(means.code, means.code$type)
+#factor levels
+non.imputed.plug <- ggplot() + 
+  stat_ellipse(data=NMDSv.split$Plug, aes(x=NMDS1,y=NMDS2, color= phyD)) +
+   geom_point(data = NMDSv.split$Plug, aes(NMDS1, NMDS2, color = phyD, shape=type),size=3) +
+   geom_path(data=means.code.split$Plug, aes(x = NMDS1, y = NMDS2, group = phyD), arrow = arrow(length = unit(0.25, "cm")), colour="black", size = 1) + 
+   labs(title = "Plug Plots Mean Trait (Non-imputed) Shifts", color = "PhyD Group\n") + theme_bw()
+
+non.imputed.plug <- non.imputed.plug + scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9")) + annotate("text", x = 0.1, y = 0.16, color="grey", label = "stress=0.13")
+non.imputed.plug
+
+non.imputed.seed <- ggplot() + 
+  stat_ellipse(data=NMDSv.split$Seed, aes(x=NMDS1,y=NMDS2, color= phyD)) +
+   geom_point(data = NMDSv.split$Seed, aes(NMDS1, NMDS2, color = phyD, shape=type),size=3) +
+   geom_path(data=means.code.split$Seed, aes(x = NMDS1, y = NMDS2, group = phyD), arrow = arrow(length = unit(0.25, "cm")), colour="black", size = 1) + 
+   labs(title = "Seed Plots Mean Trait (Non-imputed) Shifts", color = "PhyD Group\n") + theme_bw()
+
+non.imputed.seed <- non.imputed.seed + scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9")) + annotate("text", x = 0.22, y = 0.08, color="grey", label = "stress=0.13")
+
+##Print together
+theme_set(theme_gray())
+#plot_grid(non.imputed.plug, non.imputed.seed, labels = c("A. Plug Plots", "B. Seed Plots"), nrow = 2, align = "v")
+ppp <- plot_grid(non.imputed.plug, non.imputed.seed, nrow = 2, align = "v")
+save_plot("nonImputed.Traits.ordi.png", ppp, ncol = 2, # we're saving a grid plot of 2 columns
+          nrow = 2, # and 2 rows
+          base_aspect_ratio = 1.5
+          )
+#groupPlots <- plot_grid(PlottD, PlotphyD, labels = c("A.Plots colored by Trait D", "B. Plots colored by Phy D"), nrow = 2, align = "v")
+#save_plot("mean.shifts.phyD.tD.pdf", groupPlots, ncol = 2, # we're saving a grid plot of 2 columns
+#          nrow = 2, # and 2 rows
+#          # each individual subplot should have an aspect ratio of 1.3
+#          base_aspect_ratio = 1.5
+#          )
+
+```
+
+
+#create vectors (mean shifts) per group (phyD and traitD)
+```{r add mean vectors}
+mean.scores <- NMDSv[,-5] %>% #ignore plot #s
+  group_by(type, year) %>%
+  summarise_all(funs(mean))
+#NMDS.mean=aggregate(NMDSv[,1:2],list(group=Phylo_Group),mean)
+#ellipses:
+veganCovEllipse<-function (cov, center = c(0, 0), scale = 1, npoints = 100) 
+{
+  theta <- (0:npoints) * 2 * pi/npoints
+  Circle <- cbind(cos(theta), sin(theta))
+  t(center + scale * t(Circle %*% chol(cov)))
+}
+df_ell <- data.frame()
+for(g in levels(NMDS$group)){
+  df_ell <- rbind(df_ell, cbind(as.data.frame(with(NMDS[NMDS$group==g,],
+                                                   veganCovEllipse(cov.wt(cbind(MDS1,MDS2),wt=rep(1/length(MDS1),length(MDS1)))$cov,center=c(mean(MDS1),mean(MDS2)))))
+                                ,group=g))
+}
+
+#plot with ellipses and vectors showing mean shifts: 
+mean.scores %>% 
+   arrange(group, year) %>% #sort ascending so that 2018 is plotted last
+    ggplot() + 
+    geom_point(data = NMDS, aes(MDS1, MDS2, color = group)) +
+    geom_path(data=df_ell, aes(x=MDS1, y=MDS2,colour = group), size=1, linetype=1) +
+         annotate("text",x=NMDS.mean$MDS1, y=NMDS.mean$MDS2, label=NMDS.mean$group) +
+         theme(legend.position = c(0.95, 0.5)) + geom_path(aes(x = MDS1, y = MDS2, group = group), arrow = arrow(length = unit(0.15, "cm")), colour="black")
+```
+
+```{r change groupings}
+NMDS2 <- subset(NMDS, select=-c(plot)) #take out plot or below mean wont work
+NMDS2$phyD <- data.frame(phyD = substr(NMDS2$group,1,1)) #split code
+NMDS2$tD <- data.frame(tD =substr(NMDS2$group,2,2))
+NMDS2 <- subset(NMDS2, select=-c(group))  #take out old code
+as.character(unlist(NMDS2$phyD)) -> NMDS2$phyD #weird datatype issues to fix
+as.character(unlist(NMDS2$tD)) -> NMDS2$tD
+#mean phyD (combine across tD classes?) L,M,H per year
+#mean tD (combine across phyD), L,H per year
+mean.scoresPhy <- subset(NMDS2, select=-c(tD)) %>% #remove tD col
+    group_by(phyD, year) %>% 
+    summarise_all(funs(mean))
+
+#plot points, add ellipses by PhyD groups and add mean vector
+#NMDS2 has new codes for ellipses: first for phyD then rerun for tD
+
+phyD <- NMDS2$phyD
+veganCovEllipse<-function (cov, center = c(0, 0), scale = 1, npoints = 100) 
+  {
+    theta <- (0:npoints) * 2 * pi/npoints
+    Circle <- cbind(cos(theta), sin(theta))
+    t(center + scale * t(Circle %*% chol(cov)))
+  }
+  df_ell <- data.frame()
+  for(g in levels(NMDS2$phyD)){
+    df_ell <- rbind(df_ell, cbind(as.data.frame(with(NMDS2[NMDS2$phyD==g,],
+                    veganCovEllipse(cov.wt(cbind(MDS1,MDS2),wt=rep(1/length(MDS1),length(MDS1)))$cov,center=c(mean(MDS1),mean(MDS2)))))
+                    ,group=g))
+  }
+  
+mean.scoresPhy <- mean.scoresPhy %>% 
+   arrange(phyD, year)  #sort ascending so that 2018 is plotted last
+  ggplot() + 
+  geom_point(data = NMDS2, aes(MDS1, MDS2, color = phyD, stat_ellipse)) +
+  stat_ellipse()
+  
+  ##ellipse error below 
+geom_path(data=df_ell, aes(x=MDS1, y=MDS2,colour=group), size=1, linetype=1) +
+                  annotate("text", x=mean.scoresPhy$MDS1, y=mean.scoresPhy$MDS2, label= mean.scoresPhy$phyD) +
+                theme(legend.position = c(0.95, 0.5)) + 
+  geom_path(aes(x = MDS1, y = MDS2, group = phyD), arrow = arrow(length = unit(0.15, "cm")), colour="black")  
+  #######
+Plot(phyD)
+```
+
+```{r}
+Phylo_Group = NMDS2$tD
+mean.scoretD <- NMDS2[,-5] %>% #drop phyD column
+    group_by(tD, year) %>% 
+    summarise_all(funs(mean))
+NMDS = data.frame(MDS1 = caltmds$points[,1], MDS2 = caltmds$points[,2], group=Phylo_Group)
+
+NMDS.mean=aggregate(NMDS[,1:2],list(group=Phylo_Group),mean)
+
+veganCovEllipse<-function (cov, center = c(0, 0), scale = 1, npoints = 100) 
+  {
+    theta <- (0:npoints) * 2 * pi/npoints
+    Circle <- cbind(cos(theta), sin(theta))
+    t(center + scale * t(Circle %*% chol(cov)))
+  }
+  df_ell <- data.frame()
+  for(g in levels(NMDS$group)){
+    df_ell <- rbind(df_ell, cbind(as.data.frame(with(NMDS[NMDS$group==g,],
+                    veganCovEllipse(cov.wt(cbind(MDS1,MDS2),wt=rep(1/length(MDS1),length(MDS1)))$cov,center=c(mean(MDS1),mean(MDS2)))))
+                    ,group=g))
+  }
+
+PlottD <- mean.scoretD %>% 
+   arrange(year) %>% #sort ascending so that 2018 is plotted last
+  ggplot() + 
+  geom_point(data = NMDS, aes(MDS1, MDS2, color = group)) +
+geom_path(data=df_ell, aes(x=MDS1, y=MDS2,colour=group), size=1, linetype=1) +
+                  annotate("text",x=NMDS.mean$MDS1,y=NMDS.mean$MDS2,label=NMDS.mean$group) +
+                theme(legend.position = c(0.95, 0.5)) + 
+  geom_path(aes(x = NMDS1, y = NMDS2, group = tD), arrow = arrow(length = unit(0.15, "cm")), colour="black")  
+  #######
+PlottD
+```
+
+## Ordination plots by traits 
+```{r plug only then seed}
+#weighted average traits per plot. split by plot type, run mnds
+head(weighted.traits)
+weighted.traits.type <-split(weighted.traits, weighted.traits$type)
+ 
+#####SEED#########
+mds.seed <- metaMDS(weighted.traits.type$Seed[,5:ncol(weighted.traits.type$Seed)], k=3, maxit = 2000) #take out the columns dont want.
+#No convergence with k=2 how to get vectors for a k=3?
+stressplot(mds.seed)
+Phylo_Group.seed = weighted.traits.type$Seed$Code
+NMDS = data.frame(MDS1 = mds.seed$points[,1], MDS2 = mds.seed$points[,2], MDS3 = mds.seed$points[,3], group=Phylo_Group.seed)
+NMDS$plot <- weighted.traits.type$Seed$plot
+NMDS$yr <- weighted.traits.type$Seed$year
+NMDS -> nmds.seed.traits #adding for script 2.CompConvergence
+
+
+NMDS.mean=aggregate(NMDS[,1:2],list(group=Phylo_Group.seed),mean)
+veganCovEllipse<-function (cov, center = c(0, 0), scale = 1, npoints = 100) 
+  {
+    theta <- (0:npoints) * 2 * pi/npoints
+    Circle <- cbind(cos(theta), sin(theta))
+    t(center + scale * t(Circle %*% chol(cov)))
+  }
+
+  df_ell <- data.frame()
+  for(g in levels(NMDS$group)){
+    df_ell <- rbind(df_ell, cbind(as.data.frame(with(NMDS[NMDS$group==g,],
+                    veganCovEllipse(cov.wt(cbind(MDS1,MDS2),wt=rep(1/length(MDS1),length(MDS1)))$cov,center=c(mean(MDS1),mean(MDS2)))))
+                    ,group=g))
+  }
+SS <- ggplot(data = NMDS, aes(MDS1, MDS2)) + geom_point(aes(color = group)) +
+    geom_path(data=df_ell, aes(x=MDS1, y=MDS2,colour=group), size=1, linetype=1)+
+    annotate("text",x=NMDS.mean$MDS1,y=NMDS.mean$MDS2,label=NMDS.mean$group) +
+  theme(legend.position = c(.95, 0.5))
+
+##TRY ADDING SEGMENST
+NMDS$plot <- weighted.traits.type$Seed$plot
+yearS <- as.factor(weighted.traits.type$Seed$year)
+
+SS <- ggplot(data = NMDS, aes(MDS1, MDS2)) + geom_point(aes(color = group, shape = yearS)) +
+    geom_path(data=df_ell, aes(x=MDS1, y=MDS2,colour=group), size=1, linetype=1)+
+    annotate("text",x=NMDS.mean$MDS1,y=NMDS.mean$MDS2,label=NMDS.mean$group) +
+  theme(legend.position = c(.95, 0.5))+
+  geom_line(data = NMDS, aes(x=MDS1, y=MDS2, group = plot),arrow = arrow(length = unit(0.15, "cm")))
+#+labs(title = "Seed plots\n", color = "Group\n")
+
+#######PLUG#########
+mds.plug <- metaMDS(weighted.traits.type$Plug[,5:14], k=3)
+stressplot(mds.plug)
+Phylo_Group.plug = weighted.traits.type$Plug$Code
+NMDS = data.frame(MDS1 = mds.plug$points[,1], MDS2 = mds.plug$points[,2], MDS3 = mds.plug$points[,3], group=Phylo_Group.plug) #take 1/2 axis
+NMDS$plot <- weighted.traits.type$Plug$plot
+NMDS$yr <- weighted.traits.type$Plug$year
+NMDS -> nmds.plug.traits #adding for script 2.CompConvergence
+
+NMDS.mean=aggregate(NMDS[,1:2],list(group=Phylo_Group.plug),mean)
+
+veganCovEllipse<-function (cov, center = c(0, 0), scale = 1, npoints = 100) 
+  {
+    theta <- (0:npoints) * 2 * pi/npoints
+    Circle <- cbind(cos(theta), sin(theta))
+    t(center + scale * t(Circle %*% chol(cov)))
+  }
+
+  df_ell <- data.frame()
+  for(g in levels(NMDS$group)){
+    df_ell <- rbind(df_ell, cbind(as.data.frame(with(NMDS[NMDS$group==g,],
+                    veganCovEllipse(cov.wt(cbind(MDS1,MDS2),wt=rep(1/length(MDS1),length(MDS1)))$cov,center=c(mean(MDS1),mean(MDS2)))))
+                    ,group=g))
+  }
+
+PL <- ggplot(data = NMDS, aes(MDS1, MDS2)) + geom_point(aes(color = group)) +
+    geom_path(data=df_ell, aes(x=MDS1, y=MDS2,colour=group), size=1, linetype=1)+
+    annotate("text",x=NMDS.mean$MDS1,y=NMDS.mean$MDS2,label=NMDS.mean$group) +
+  theme(legend.position = c(0.95, 0.5))
+
+PL <- ggplot(data = NMDS, aes(MDS1, MDS2)) + geom_point(aes(color = group)) +
+    geom_path(data=df_ell, aes(x=MDS1, y=MDS2,colour=group), size=1, linetype=1)+
+    annotate("text",x=NMDS.mean$MDS1,y=NMDS.mean$MDS2,label=NMDS.mean$group) +
+  theme(legend.position = c(.95, 0.5))+
+  geom_line(data = NMDS, aes(x=MDS1, y=MDS2, group = plot),arrow = arrow(length = unit(0.15, "cm"))) 
+#+labs(title = "Plug plots\n", color = "Group\n")
+```
+
+#Calculate mean shifts 
+```{r add mean vectors}
+#########create vectors by mean positions per group (phyD and traitD, by year)
+#calcuate mean by groups as is HH/HL, etc
+
+mean.scores <- NMDS[,-4] %>% #ignore plot #s
+  group_by(code, year) %>%
+  summarise_all(funs(mean))
+
+#take plot above with ellipses and add 12 mean vectors by group: 
+mean.scores %>% 
+   arrange(year) %>% #sort ascending so that 2018 is plotted last
+  ggplot() + 
+  geom_point(data = NMDS, aes(MDS1, MDS2, color = group)) +
+geom_path(data=df_ell, aes(x=MDS1, y=MDS2,colour=group), size=1, linetype=1) +
+                  annotate("text",x=NMDS.mean$MDS1,y=NMDS.mean$MDS2,label=NMDS.mean$group) +
+                theme(legend.position = c(0.95, 0.5)) + geom_path(aes(x = NMDS1, y = NMDS2, group = code), arrow = arrow(length = unit(0.15, "cm")), colour="black")
+
+```

@@ -1,0 +1,343 @@
+---
+title: "01b.ordi.plot.compositional.space"
+output: html_document
+---
+#Shifts in Compositional Space
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyr)
+library(FD)
+library(vegan)
+library(ggplot2)
+library(ggforce)
+library(reshape2)
+```
+
+#Compositional Ordination of Plots by Presence/Absence
+```{r load data}
+#source 00.load.for.analyses.Rmd: 
+DF1 <-as.matrix((subset(df.PA, select = Agalinis_tenuifolia:Zizia_aurea)))
+
+jmds <- metaMDS(DF1, k=3, maxit=20000, distance = 'jaccard', autotransform = FALSE, trymax=100)
+jmds <- metaMDS(DF1, distance = "jaccard", k=3, maxit=60000, previous.best=jmds, autotransform = FALSE, trymax=100) 
+stressplot(jmds)
+#scree.jmds <- dimcheckMDS(df.pa.plug[5:length(df.pa.plug)], distance = "jaccard", k = 6, trymax = 20,
+#  autotransform = TRUE)
+
+year = as.factor(df.PA$year)
+plot = df.PA$plot
+NMDS.plug.PAcomp <- as.data.frame(scores(jmds)) #NMDS.plug.PAcomp
+NMDS.plug.PAcomp <- cbind(NMDS.plug.PAcomp, year, plot, df.PA$Code)
+
+#PD
+NMDS.plug.PAcomp$phyD <-  data.frame(phyD = substr(df.PA$Code,1,1)) 
+unlist(NMDS.plug.PAcomp$phyD) -> NMDS.plug.PAcomp$phyD
+factor(NMDS.plug.PAcomp$phyD, levels = c('L', 'M', 'H')) -> NMDS.plug.PAcomp$phyD
+#FD
+NMDS.plug.PAcomp$FD <-  data.frame(FD = substr(df.PA$Code,2,2)) 
+unlist(NMDS.plug.PAcomp$FD) -> NMDS.plug.PAcomp$FD
+factor(NMDS.plug.PAcomp$FD, levels = c('L', 'H')) -> NMDS.plug.PAcomp$FD
+
+```
+
+#Plot by PD treatment
+```{r}
+start <- subset(NMDS.plug.PAcomp, (year == "2016"))
+end <- subset(NMDS.plug.PAcomp, (year == "2019.09"))
+StoE <- rbind(start, end)
+
+Fig2 <-  StoE %>%             #sort ascending so that 2019 is plotted 
+  ggplot() +
+  geom_point(aes(x=NMDS1, y=NMDS2, shape=year, color = phyD), size=3) +
+  theme_bw() +
+  labs(shape="Year", color="PD") +
+  geom_path(aes(x = NMDS1, y = NMDS2, group = plot), arrow = arrow(length = unit(0.15, "cm")), color="grey") +
+  
+  stat_ellipse(data=start, aes(x=NMDS1,y=NMDS2, group = phyD), color= "grey") + 
+  stat_ellipse(data=end, aes(x=NMDS1,y=NMDS2, color= phyD)) +
+  scale_color_manual("PD", values = c("L" = "#332288",
+                                "M" = "#117733",
+                                "H" = "#44AA99"
+                                )) +
+annotate("text", x = 2.5, y = 2.7, color="grey",
+label = "stress=0.22") + labs(x="nmds1", y="nmds2")
+```
+   
+#Plot by FD
+```{r}
+#NMDS.plug.PAcomp <- cbind(NMDS.plug.PAcomp, year, plot, df.PA$Code)
+startFD <- subset(NMDS.plug.PAcomp, (year == "2016"))
+endFD <- subset(NMDS.plug.PAcomp, (year == "2019.09"))
+StoEFD <- rbind(startFD, endFD)
+
+FigS2 <-  StoEFD %>%             #sort ascending so that 2019 is plotted 
+  ggplot() +
+  geom_point(aes(x=NMDS1, y=NMDS2, shape=year, color = FD), size=3) +
+  theme_bw() +
+  labs(shape="Year", color="FD") +
+  geom_path(aes(x = NMDS1, y = NMDS2, group = plot), arrow = arrow(length = unit(0.15, "cm")), color="grey") +
+  stat_ellipse(data=startFD, aes(x=NMDS1,y=NMDS2, group = FD, color= FD), linetype= "dashed" ) + 
+  stat_ellipse(data=endFD, aes(x=NMDS1,y=NMDS2, color= FD)) +
+  scale_color_manual("FD", values = c("L" = "#332288",
+                                "M" = "#117733",
+                                "H" = "#44AA99"
+                                )) +
+annotate("text", x = 2.5, y = 2.7, color="grey",
+label = "stress=0.22") + labs(x="NMDS1", y="NMDS2")
+```
+
+
+#Testing for Convergence/Divergence: Mean Compositional dissimilarity for P/A
+####Plug and Seed
+Comparing mean dissimilarity between years can indicate if plots are converging 
+```{r}
+#P/A Dissimilarity by year
+df.pa.plug.yr <- split(df.pa.plug, df.pa.plug$year) 
+
+dis.matJ.p <- lapply(df.pa.plug.yr, function(x) vegdist(x[8:ncol(x)], method="jaccard"))
+mean.J.p <- unlist(lapply(dis.matJ.p, function(x) mean(x)))
+
+#########################Dissimilarity by PhyD Class###################
+temp = lapply(split(df.pa.plug, df.pa.plug$year), function(x) split(x, x$phyD))
+nested.dis.matJ.p <- lapply(temp, function(x) lapply(x, function(x) vegdist(subset(x, select = Agalinis_tenuifolia:Zizia_aurea), method="jaccard"))) 
+
+nested.mean.J.p <- lapply(nested.dis.matJ.p, function(x) unlist(lapply(x, function(x) mean(x)) ) )
+
+as.data.frame(nested.mean.J.p) -> diss.plug
+names(diss.plug) <- names(nested.mean.J.p)
+rownames(diss.plug) -> diss.plug$phyd
+factor(diss.plug$phyd, levels = c('L', 'M', 'H')) -> diss.plug$phyd
+melt(diss.plug) -> diss.plug.long
+#test.fall <- subset(test, select = -c(`2018.05`, `2019.06`))
+#test.spring <- subset(test, select = c(`2018.05`, `2019.06`))
+#melt(test.fall) -> test.fall
+
+P <- diss.plug.long %>%
+  mutate(group2 = case_when(variable %in% c("2018.05", "2019.06") ~ "A",
+                            TRUE ~ "B")) %>% 
+  ggplot(aes(x = variable, 
+             y = value, 
+             color = phyd, 
+             group = interaction(phyd, group2), 
+             linetype = group2)) +
+  geom_line(size = 1) +
+  scale_linetype_manual("season",
+                        values = c("A" = "dashed",
+                                   "B" = "solid"),
+                        labels = c("A" = "spring",
+                                   "B" = "fall")) + 
+  scale_color_manual("PD",
+                     values = c("L" = "#332288",
+                                "M" = "#117733",
+                                "H" = "#44AA99"
+                                )) +
+  geom_point(size = 3, alpha = 0.5) # only for comprehension, remove it
+P <- P + labs(x = "year",  y= "dissimilarity (Jaccard's)", color="PD") + theme_bw() +
+  theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+  
+  #labs(title = "Mean dissimilarity",subtitle = "Presence/absence data", x = "year",  y= "Dissimilarity (Jaccard's)") + theme_bw() +
+#ggsave(P, file="../OUT/meanDissPA.png", width = 8, height = 6)
+```
+
+#Confidence Intervals for dissimilarity
+bootstrap original plots without replacement, recalculate diss
+```{r}
+##Matrices by year and phyD class:
+temp = lapply(split(df.pa.plug, df.pa.plug$year), function(x) split(x, x$phyD) )
+#temp from above bootstrap 
+##
+myReps = 1000
+myCI = 0.95
+myError <- myObs <- vector('list', length = length(temp))
+names(myError) <- names(myObs) <- names(temp)
+for(i in names(myError)) myError[[i]] <- list(L = numeric(0), M = numeric(0), H = numeric(0))
+
+for(i in names(temp)) {
+  for(j in c('L', 'M', 'H')) {
+    print(paste('doing year', i, 'with phyD', j))
+    bittyTemp <- temp[[i]][[j]][which(names(temp[[i]][[j]]) == 'Agalinis_tenuifolia'):which(names(temp[[i]][[j]]) == 'Zizia_aurea')]
+    bittyTemp.d <- sapply(seq(myReps), function(x) {
+      vegdist(bittyTemp[sample(1:24, 12, replace = F), ], method = 'jaccard') %>% mean
+    })
+    myObs[[i]][[j]] <- mean(vegdist(bittyTemp, method = 'jaccard'))
+    myError[[i]][[j]] <- c(obs = myObs[[i]][[j]], quantile(bittyTemp.d, c((1-myCI) / 2, myCI+((1-myCI) / 2)))) #half jacknifing in
+    }
+}
+
+##################unnested lists and retaining the wide structure
+myError -> err
+#lapply(err$`2016`, function(x) as.data.frame(melt(x))) -> B
+as.data.frame(melt(err)) -> ERR #need to keep the obs, 2.5, 
+valueIDs <- c("obs","lowCI", "highCI" )
+cbind(ERR, valueIDs) -> NEWdf.test
+
+names(NEWdf.test) <- c("value", "phyd", "year", "valueID")
+
+data2 <- dcast(NEWdf.test, year + phyd ~ valueID, value.var = c("value"))
+factor(data2$phyd, levels = c('L', 'M', 'H')) -> data2$phyd
+
+#myError has each obs and error bars
+PP <- data2 %>%
+  mutate(group2 = case_when(year %in% c("2018.05", "2019.06") ~ "A",
+                            TRUE ~ "B")) %>% 
+  ggplot(aes(x = year, 
+             y = obs, 
+             color = phyd, 
+             group = interaction(phyd, group2), 
+             linetype = group2)) +
+  geom_line(size = 1) +
+  scale_linetype_manual("season",
+                        values = c("A" = "dashed",
+                                   "B" = "solid"),
+                        labels = c("A" = "spring",
+                                   "B" = "fall")) + 
+  scale_color_manual("PD",
+                     values = c("L" = "#332288",
+                                "M" =  "#117733",
+                                "H" =  "#44AA99"
+                                )) +
+  geom_point(size = 3, alpha = 0.5)  +
+  geom_errorbar(aes(ymin=lowCI, ymax=highCI), width=.2,
+                 position=position_dodge(.1)) 
+  
+PP <- PP + labs(x = "year",  y= "dissimilarity (Jaccard's)", color="PD") + theme_bw() +
+  theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+
+
+fitA <- aov(obs ~ year + phyd, data2)
+fitA <- aov(obs ~ year + phyd + year:phyd, data2)
+
+summary(fitA)
+TukeyHSD(fitA)
+
+
+
+```
+
+###FD dissimilarity:
+```{r}
+#P/A Dissimilarity by year
+df.pa.plug.yr <- split(df.pa.plug, df.pa.plug$year) 
+
+dis.matJ.p <- lapply(df.pa.plug.yr, function(x) vegdist(x[8:ncol(x)], method="jaccard"))
+mean.J.p <- unlist(lapply(dis.matJ.p, function(x) mean(x)))
+
+#########################Dissimilarity by FD treatment###################
+temp = lapply(split(df.pa.plug, df.pa.plug$year), function(x) split(x, x$fd))
+nested.dis.matJ.p <- lapply(temp, function(x) lapply(x, function(x) vegdist(subset(x, select = Agalinis_tenuifolia:Zizia_aurea), method="jaccard"))) 
+
+nested.mean.J.p <- lapply(nested.dis.matJ.p, function(x) unlist(lapply(x, function(x) mean(x)) ) )
+
+as.data.frame(nested.mean.J.p) -> diss.plug
+names(diss.plug) <- names(nested.mean.J.p)
+rownames(diss.plug) -> diss.plug$fd
+factor(diss.plug$fd, levels = c('L', 'H')) -> diss.plug$fd
+melt(diss.plug) -> diss.plug.long
+#test.fall <- subset(test, select = -c(`2018.05`, `2019.06`))
+#test.spring <- subset(test, select = c(`2018.05`, `2019.06`))
+#melt(test.fall) -> test.fall
+
+
+
+#Confidence Intervals for dissimilarity
+#bootstrap original plots without replacement, recalculate diss
+
+
+##Matrices by year and phyD class:
+
+myReps = 1000
+myCI = 0.95
+myError <- myObs <- vector('list', length = length(temp))
+names(myError) <- names(myObs) <- names(temp)
+for(i in names(myError)) myError[[i]] <- list(L = numeric(0), M = numeric(0), H = numeric(0))
+
+for(i in names(temp)) {
+  for(j in c('L', 'H')) {
+    print(paste('doing year', i, 'with FD', j))
+    bittyTemp <- temp[[i]][[j]][which(names(temp[[i]][[j]]) == 'Agalinis_tenuifolia'):which(names(temp[[i]][[j]]) == 'Zizia_aurea')]
+    bittyTemp.d <- sapply(seq(myReps), function(x) {
+      vegdist(bittyTemp[sample(1:24, 12, replace = F), ], method = 'jaccard') %>% mean
+    })
+    myObs[[i]][[j]] <- mean(vegdist(bittyTemp, method = 'jaccard'))
+    myError[[i]][[j]] <- c(obs = myObs[[i]][[j]], quantile(bittyTemp.d, c((1-myCI) / 2, myCI+((1-myCI) / 2)))) #half jacknifing in
+    }
+}
+
+##################unnested lists and retaining the wide structure
+myError -> err
+#lapply(err$`2016`, function(x) as.data.frame(melt(x))) -> B
+as.data.frame(melt(err)) -> ERR #need to keep the obs, 2.5, 
+valueIDs <- c("obs","lowCI", "highCI" )
+cbind(ERR, valueIDs) -> NEWdf.test
+
+names(NEWdf.test) <- c("value", "fd", "year", "valueID")
+
+data2 <- dcast(NEWdf.test, year + fd ~ valueID, value.var = c("value"))
+factor(data2$fd, levels = c('L', 'H')) -> data2$fd
+
+#myError has each obs and error bars
+PP <- data2 %>%
+  mutate(group2 = case_when(year %in% c("2018.05", "2019.06") ~ "A",
+                            TRUE ~ "B")) %>% 
+  ggplot(aes(x = year, 
+             y = obs, 
+             color = fd, 
+             group = interaction(fd, group2), 
+             linetype = group2)) +
+  geom_line(size = 1) +
+  scale_linetype_manual("season",
+                        values = c("A" = "dashed",
+                                   "B" = "solid"),
+                        labels = c("A" = "spring",
+                                   "B" = "fall")) + 
+  scale_color_manual("FD",
+                     values = c("L" = "#332288",
+                                "H" =  "#44AA99"
+                                )) +
+  geom_point(size = 3, alpha = 0.5)  +
+  geom_errorbar(aes(ymin=lowCI, ymax=highCI), width=.2,
+                 position=position_dodge(.1)) 
+  
+PP <- PP + labs(x = "year",  y= "dissimilarity (Jaccard's)", color="FD") + theme_bw() +
+  theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+
+```
+
+
+
+
+
+
+##########################Mean pairwise replicates
+```{r}
+#per $year, group_by phyD level, dist(), extract replicate dists only, calculate mean & SEM
+df3 <- vector('list', length(df.pa.plug.yr))
+names(df3) <- names(df.pa.plug.yr)
+for(i in names(df.pa.plug.yr)) {
+  df.pa.plug.yr[[i]] -> MM
+  ## at the end, shove into df3[[i]]
+  rownames(MM) <- paste(MM$plot, MM$new.rep, MM$phyD, sep="-")
+  disMat <- vegdist(MM[8:ncol(MM)], method="jaccard")
+  datmat <- as.matrix(disMat)
+  library(reshape2)
+  df3[[i]] <- melt(datmat)
+  df3[[i]]$Var1 <- as.character(df3[[i]]$Var1)
+  df3[[i]]$Var2 <- as.character(df3[[i]]$Var2)
+  df3[[i]]$spMix1 <- sapply(strsplit(df3[[i]]$Var1, '-'), '[', 2)
+  df3[[i]]$spMix2 <- sapply(strsplit(df3[[i]]$Var2, '-'), '[', 2)
+  df3[[i]]$plot1 <- sapply(strsplit(df3[[i]]$Var1, '-'), '[', 1)
+  df3[[i]]$plot2 <- sapply(strsplit(df3[[i]]$Var2, '-'), '[', 1)
+  df3[[i]]$phyD <- sapply(strsplit(df3[[i]]$Var1, '-'), '[', 3)
+  df3[[i]] <- df3[[i]][(df3[[i]]$plot1 != df3[[i]]$plot2) & (df3[[i]]$spMix1 == df3[[i]]$spMix2), ]
+  
+  df3[[i]] <- df3[[i]][!duplicated(df3[[i]]$spMix1), ] #drop duplicate pairwise
+
+}
+
+df3.subset <- df3.subset[!duplicated(df3.subset$spMix1), ]
+df.pa.plug.yr$'2017'$phyD[match(df3.subset$plot2, df.pa.plug.yr$`2017`$plot)] #drop those matching
+
+```
+
+

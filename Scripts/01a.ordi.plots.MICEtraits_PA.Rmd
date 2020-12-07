@@ -1,0 +1,402 @@
+---
+title: "01a.ordi.plots.MICEtraits"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(cowplot)
+library(reshape2)
+library(ggplot2)
+library(ggrepel)
+#library(grid)
+#library(FD)
+library(geiger)
+library(data.table)
+library(tidyr)
+library(dplyr)
+library(vegan)
+library(ggforce)
+```
+
+#Ordination using P/A and sub traits (WITHOUT weighted average)
+```{r}
+head(df.PA)
+traits.mat <- read.csv('../DATA/ImputedMiceTraits.2016-01-06.csv', as.is = T, row.names = 1)
+setDT(traits.mat, keep.rownames = "Species")[]
+traits.mat <- traits.mat %>% filter (Species %in% colnames(df.PA[8:ncol(df.PA)]))
+
+#df.PA <- df.PA %>% select (-c(new.rep, Code))
+
+df.PA.long <- melt(df.PA, id.vars = c("year", "plot", "type", "phyD", "fd"), variable.name = "Species")
+df.PA.long <- df.PA.long[order(df.PA.long$plot),] #order by plot not species
+
+plots.traits.mat <- df.PA.long %>% 
+            left_join(traits.mat, by = "Species")
+
+plots.traits.mat$photosyntheticPathway <- as.numeric(sub("C3", "1", plots.traits.mat$photosyntheticPathway))
+plots.traits.mat$photosyntheticPathway[is.na(plots.traits.mat$photosyntheticPathway)] <- 0 #replace NA for C4 with 0
+drop.traits <- c("floweringStartcoded", "lifeCycleCoded", "wis_IL", "Lifeform", "habitClean")
+plots.traits.mat <- plots.traits.mat %>% select (-c(drop.traits))
+head(plots.traits.mat)
+plots.traits.mat.f <- filter(plots.traits.mat, value != "0")
+
+#calcuate mean trait values across species per plot
+mean.traitsByplot <- plots.traits.mat.f %>% 
+group_by(plot, year, type, phyD, fd) %>%
+  summarise_if(is.numeric, mean, na.rm = TRUE)
+
+pa.tmds <- metaMDS(mean.traitsByplot[,-c(1:6)], k = 3, maxit = 25000, distance = "bray")
+pa.tmds <- metaMDS(mean.traitsByplot[,-c(1:6)], k = 3, maxit = 25000, previous.best = pa.tmds)  
+#stressplot(pa.tmds)
+pa.scores <- as.data.frame(scores(pa.tmds)) #extract nmds scores
+pa.scores2 <- cbind(pa.scores, as.data.frame(mean.traitsByplot[,1:5] ))
+
+#pa.scores2$phyD <- data.frame(phyD = substr(pa.scores2$Code,1,1)) #split code
+#pa.scores2$tD <- data.frame(tD =substr(pa.scores2$Code,2,2))
+
+#split groupings for plotting
+pa.scores3 <- pa.scores2[,-4]  #take out plot or below mean wont work
+#pa.scores3$Plug <- subset(pa.scores3$Plug, select=-c(Code))
+factor(pa.scores3$phyD, levels = c('L', 'M', 'H')) -> pa.scores3$phyD
+factor(pa.scores3$fd, levels = c('L', 'H')) -> pa.scores3$fd
+
+```
+
+#Centroids
+```{r}
+centroids.pa.phyd <- subset(pa.scores3, select=-fd)%>% 
+    group_by(year, type, phyD) %>% 
+    summarise_all(funs(mean))
+
+centroids.pa.fd<- subset(pa.scores3, select=-phyD) %>% 
+    group_by(year, type, fd) %>% 
+    summarise_all(funs(mean))
+```
+
+
+#TRAIT VECTORS
+```{r}
+#add trait vectors:
+vf <- envfit(pa.tmds, mean.traitsByplot[,-c(1:6)], perm = 9999)
+#vec <- as.data.frame(vf.Wtrait$vectors$arrows*sqrt(vf.Wtrait$vectors$r))
+scores(vf, "vectors")
+spp.scrs <- as.data.frame(scores(vf, display = "vectors"))
+spp.scrs <- cbind(spp.scrs, Traits = rownames(spp.scrs))
+
+```
+
+#Plotting by fd
+```{r}
+
+centroids.fd <- subset(centroids.pa.fd, centroids.pa.fd$year == "2016" | centroids.pa.fd$year == "2019.09" )
+
+start <- subset(pa.scores2, year == "2016")
+end <- subset(pa.scores2, year == "2019.09")
+dat2 <- rbind(start, end)
+
+dat <-  subset(dat2, select=-type) %>%
+   arrange(plot) %>%
+  arrange(year)
+
+dat %>%  
+  ggplot() +
+  geom_point(aes(x=NMDS1, y=NMDS2, shape=year, color = fd), size=3) +
+  theme_bw() +
+  labs(shape="Year", color="FD") +
+  geom_path(aes(x = NMDS1, y = NMDS2, group = plot), arrow = arrow(length = unit(0.15, "cm")), color="grey") +
+ #geom_segment(data = spp.scrs,             aes(x = 0, xend = NMDS1/3, y = 0, yend = NMDS2/3),     arrow = arrow(length = unit(0.25, "cm")), colour = "grey") +
+  #geom_text_repel(data = spp.scrs, aes(x = NMDS1/3, y = NMDS2/3, label = Traits),  size = 3) +
+  scale_color_manual("FD", values = c("L" = "#332288",
+                                "H" = "#44AA99"
+                                )) +
+#stat_ellipse
+     geom_mark_ellipse(expand = 0, data=start, aes(x=NMDS1,y=NMDS2, color= fd)) +
+   geom_mark_ellipse(expand = 0, data = end, aes(NMDS1, NMDS2, color = fd)) + geom_path(data=centroids.fd, aes(x = NMDS1, y = NMDS2, group = fd), arrow = arrow(length = unit(0.15, "cm")), colour="red", size = 1)  
+
+```
+
+
+#Testing differences in distance traveled (vectors) by treatment
+```{r}
+pa.scores3
+vector1 <- subset(pa.scores3, pa.scores3$year == "2016")
+vector2 <- subset(pa.scores3, pa.scores3$year == "2019.09")
+
+df <- cbind(vector1[,1:3], vector2[,1:3])
+df$distance <- apply(df, 1, function(x) dist(matrix(x, nrow = 2, byrow = TRUE)))
+cbind(df, vector1$fd) -> finalV
+low <- subset(finalV, finalV$`vector1$fd` == "L")
+high <- subset(finalV, finalV$`vector1$fd` == "H")
+t.test(low$distance, high$distance)
+
+
+#by PD
+cbind(df, vector1$phyD) -> finalV.pd
+
+lowPD <- subset(finalV.pd, finalV.pd$`vector1$phyD` == "L")
+medPD <- subset(finalV.pd, finalV.pd$`vector1$phyD` == "M")
+highPD <- subset(finalV.pd, finalV.pd$`vector1$phyD` == "H")
+t.test(lowPD$distance, highPD$distance)
+t.test(medPD$distance, highPD$distance)
+t.test(medPD$distance, lowPD$distance)
+
+
+```
+
+#Dissimilarity by FD Treatment
+```{r}
+
+temp = lapply(split(mean.traitsByplot, mean.traitsByplot$year), function(x) split(x, x$fd))
+
+dis.fd <- lapply(temp, function(x) lapply(x, function(x) vegdist(subset(x, select = seedMass:genome_Use), method="bray"))) 
+
+n.dis.fd <- lapply(dis.fd, function(x) unlist(lapply(x, function(x) mean(x)) ) )
+
+as.data.frame(n.dis.fd) -> diss.FD
+
+names(diss.FD) <- c("2016", "2017", "2018.06", "2018", "2019.06", "2019")
+rownames(diss.FD) -> diss.FD$fd
+factor(diss.FD$fd, levels = c('L', 'H')) -> diss.FD$fd
+melt(diss.FD) -> diss.FD.long
+#test.fall <- subset(test, select = -c(`2018.05`, `2019.06`))
+#test.spring <- subset(test, select = c(`2018.05`, `2019.06`))
+#melt(test.fall) -> test.fall
+
+
+#mean diss by FD and year plotted:
+M <- diss.FD.long %>%
+  mutate(group2 = case_when(variable %in% c("2018.06", "2019.06") ~ "A",
+                            TRUE ~ "B")) %>% 
+  ggplot(aes(x = variable, 
+             y = value, 
+             color = fd, 
+             group = interaction(fd, group2), 
+             linetype = group2)) +
+  geom_line(size = 1) +
+  scale_linetype_manual("season",
+                        values = c("A" = "dashed",
+                                   "B" = "solid"),
+                        labels = c("A" = "spring",
+                                   "B" = "fall")) + 
+  scale_color_manual("FD",
+                     values = c("L" = "#332288",
+                                "H" = "#44AA99"
+                                )) +
+  geom_point(size = 3, alpha = 0.5) # only for comprehension, remove it
+MM <- M + labs(x = "year",  y= "dissimilarity (Bray)", color="PD") + theme_bw() +
+  theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+  
+
+```
+
+#Confidence Intervals for dissimilarity
+bootstrap original plots without replacement, recalculate diss
+```{r}
+##Matrices by year and phyD class:
+temp = lapply(split(mean.traitsByplot, mean.traitsByplot$year), function(x) split(x, x$fd) )
+#temp from above bootstrap 
+##
+myReps = 1000
+myCI = 0.95
+myError <- myObs <- vector('list', length = length(temp))
+names(myError) <- names(myObs) <- names(temp)
+for(i in names(myError)) myError[[i]] <- list(L = numeric(0), H = numeric(0))
+
+for(i in names(temp)) {
+  for(j in c('L', 'H')) {
+    print(paste('doing year', i, 'with fd', j))
+    bittyTemp <- temp[[i]][[j]][which(names(temp[[i]][[j]]) == 'seedMass'):which(names(temp[[i]][[j]]) == 'genome_Use')]
+    bittyTemp.d <- sapply(seq(myReps), function(x) {
+      vegdist(bittyTemp[sample(1:24, 12, replace = F), ], method = 'bray') %>% mean
+    })
+    myObs[[i]][[j]] <- mean(vegdist(bittyTemp, method = 'bray'))
+    myError[[i]][[j]] <- c(obs = myObs[[i]][[j]], quantile(bittyTemp.d, c((1-myCI) / 2, myCI+((1-myCI) / 2)))) #half jacknifing in
+    }
+}
+
+##################unnested lists and retaining the wide structure
+myError -> err
+#lapply(err$`2016`, function(x) as.data.frame(melt(x))) -> B
+as.data.frame(melt(err)) -> ERR #need to keep the obs, 2.5, 
+valueIDs <- c("obs","lowCI", "highCI" )
+cbind(ERR, valueIDs) -> NEWdf.test
+
+names(NEWdf.test) <- c("value", "fd", "year", "valueID")
+
+data2fd <- dcast(NEWdf.test, year + fd ~ valueID, value.var = c("value"))
+factor(data2fd$fd, levels = c('L', 'H')) -> data2fd$fd
+
+MM <- data2fd %>%
+  mutate(group2 = case_when(year %in% c("2018.05", "2019.06") ~ "A",
+                            TRUE ~ "B")) %>% 
+  ggplot(aes(x = year, 
+             y = obs, 
+             color = fd, 
+             group = interaction(fd, group2), 
+             linetype = group2)) +
+  geom_line(size = 1) +
+  scale_linetype_manual("season",
+                        values = c("A" = "dashed",
+                                   "B" = "solid"),
+                        labels = c("A" = "spring",
+                                   "B" = "fall")) + 
+  scale_color_manual("FD",
+                     values = c("L" = "#332288",
+                                "H" =  "#44AA99"
+                                )) +
+  geom_point(size = 3, alpha = 0.5)  +
+  geom_errorbar(aes(ymin=lowCI, ymax=highCI), width=.2,
+                 position=position_dodge(.1)) 
+  
+MM <- MM + labs(x = "year",  y= "dissimilarity (Bray)", color="FD") + theme_bw() +
+  theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+
+fitA <- aov(obs ~ year + fd, data2fd)
+summary(fitA)
+TukeyHSD(fitA)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+#Plot by PhyD
+```{r}
+dat %>%  
+  ggplot() +
+  geom_point(aes(x=NMDS1, y=NMDS2, shape=year, color = phyD), size=3) +
+  theme_bw() +
+  labs(shape="Year", color="PD") +
+  geom_path(aes(x = NMDS1, y = NMDS2, group = plot), arrow = arrow(length = unit(0.15, "cm")), color="grey") +
+  scale_color_manual("PD", values = c("L" = "#332288",
+                                      "M" = "#117733",
+                                "H" = "#44AA99"
+                                )) +
+  geom_mark_ellipse(data=start, aes(x=NMDS1,y=NMDS2, group= phyD, color= phyD), linetype="dashed") +
+   geom_mark_ellipse(data = end, aes(NMDS1, NMDS2, group= phyD, color = phyD)) 
+
+```
+
+
+#Dissimilarity by PhyD Treatment
+```{r}
+temp = lapply(split(mean.traitsByplot, mean.traitsByplot$year), function(x) split(x, x$phyD))
+
+dis.phyd <- lapply(temp, function(x) lapply(x, function(x) vegdist(subset(x, select = seedMass:genome_Use), method="bray"))) 
+
+n.dis.phyd <- lapply(dis.phyd, function(x) unlist(lapply(x, function(x) mean(x)) ) )
+
+as.data.frame(n.dis.phyd) -> diss.PD
+
+names(diss.PD) <- c("planted", "year 1", "year 2.1", "year 2", "year 3.1", "year 3")
+rownames(diss.PD) -> diss.PD$phyD
+factor(diss.PD$phyD, levels = c('L','M', 'H')) -> diss.PD$phyD
+melt(diss.PD) -> diss.PD.long
+#test.fall <- subset(test, select = -c(`2018.05`, `2019.06`))
+#test.spring <- subset(test, select = c(`2018.05`, `2019.06`))
+#melt(test.fall) -> test.fall
+
+
+#mean diss by PD and year plotted:
+M <- diss.PD.long %>%
+  mutate(group2 = case_when(variable %in% c("year 2.1", "year 3.1") ~ "A",
+                            TRUE ~ "B")) %>% 
+  ggplot(aes(x = variable, 
+             y = value, 
+             color = phyD, 
+             group = interaction(phyD, group2), 
+             linetype = group2)) +
+  geom_line(size = 1) +
+  scale_linetype_manual("season",
+                        values = c("A" = "dashed",
+                                   "B" = "solid"),
+                        labels = c("A" = "spring",
+                                   "B" = "fall")) + 
+  scale_color_manual("FD",
+                     values = c("L" = "#332288",
+                                "M" = "#117733",
+                                "H" = "#44AA99"
+                                )) +
+  geom_point(size = 3, alpha = 0.5) # only for comprehension, remove it
+MM <- M + labs(x = "year",  y= "dissimilarity (Bray)", color="PD") + theme_bw() +
+  theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+  
+
+```
+
+#Confidence Intervals for dissimilarity
+bootstrap original plots without replacement, recalculate diss
+```{r}
+##Matrices by year and phyD class:
+temp = lapply(split(mean.traitsByplot, mean.traitsByplot$year), function(x) split(x, x$phyD) )
+#temp from above bootstrap 
+##
+myReps = 1000
+myCI = 0.95
+myError <- myObs <- vector('list', length = length(temp))
+names(myError) <- names(myObs) <- names(temp)
+for(i in names(myError)) myError[[i]] <- list(L = numeric(0), H = numeric(0))
+
+for(i in names(temp)) {
+  for(j in c('L', "M", 'H')) {
+    print(paste('doing year', i, 'with phyD', j))
+    bittyTemp <- temp[[i]][[j]][which(names(temp[[i]][[j]]) == 'seedMass'):which(names(temp[[i]][[j]]) == 'genome_Use')]
+    bittyTemp.d <- sapply(seq(myReps), function(x) {
+      vegdist(bittyTemp[sample(1:24, 12, replace = F), ], method = 'bray') %>% mean
+    })
+    myObs[[i]][[j]] <- mean(vegdist(bittyTemp, method = 'bray'))
+    myError[[i]][[j]] <- c(obs = myObs[[i]][[j]], quantile(bittyTemp.d, c((1-myCI) / 2, myCI+((1-myCI) / 2)))) #half jacknifing in
+    }
+}
+
+##################unnested lists and retaining the wide structure
+myError -> err
+#lapply(err$`2016`, function(x) as.data.frame(melt(x))) -> B
+as.data.frame(melt(err)) -> ERR #need to keep the obs, 2.5, 
+valueIDs <- c("obs","lowCI", "highCI" )
+cbind(ERR, valueIDs) -> NEWdf.test
+
+names(NEWdf.test) <- c("value", "phyD", "year", "valueID")
+
+data2phyd <- dcast(NEWdf.test, year + phyD ~ valueID, value.var = c("value"))
+factor(data2phyd$phyD, levels = c('L',"M"  ,'H')) -> data2phyd$phyD
+
+MM <- data2phyd %>%
+  mutate(group2 = case_when(year %in% c("2018.05", "2019.06") ~ "A",
+                            TRUE ~ "B")) %>% 
+  ggplot(aes(x = year, 
+             y = obs, 
+             color = phyD, 
+             group = interaction(phyD, group2), 
+             linetype = group2)) +
+  geom_line(size = 1) +
+  scale_linetype_manual("season",
+                        values = c("A" = "dashed",
+                                   "B" = "solid"),
+                        labels = c("A" = "spring",
+                                   "B" = "fall")) + 
+  scale_color_manual("FD",
+                     values = c("L" = "#332288",
+                                "M" = "#117733",
+                                "H" =  "#44AA99"
+                                )) +
+  geom_point(size = 3, alpha = 0.5)  +
+  geom_errorbar(aes(ymin=lowCI, ymax=highCI), width=.2,
+                 position=position_dodge(.1)) 
+  
+MM <- MM + labs(x = "year",  y= "dissimilarity (Bray)", color="PD") + theme_bw() +
+  theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+
+fitA <- aov(obs ~ year + phyD, data2phyd)
+summary(fitA)
+TukeyHSD(fitA)
+
+
+```
