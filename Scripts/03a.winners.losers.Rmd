@@ -93,7 +93,7 @@ p.list.adjusted2 <- p.list.adjusted[ order(p.list.adjusted$species), ]
 #Make dataframe for supplment:
 #counts.table2019$pvalue_2019.09 <- p.list.adjusted2$p.list.adjusted
 #counts.table2019$pvalue_2019.06 <- p.list.adjusted2$p.list.adjusted
-write.csv(counts.table2019, file="../OUT/SupplmentalFile3.PlotsOccupied.csv")
+write.csv(counts.table2019, file="../OUT/SupplementalFile.PlotsOccupied.csv")
 ```
 
 #Testing for phylogenetic signal of "winners/loser"
