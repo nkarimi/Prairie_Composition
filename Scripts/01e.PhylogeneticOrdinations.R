@@ -1,11 +1,10 @@
+#Phylo-Ordinations
+
 library(ape)
 library(picante)
 library(betapart)
 library(picante)
 library(cowplot)
-#Phylo-Ordinations
-#per this tutorial: http://kembellab.ca/r-workshop/biodivR/SK_Biodiversity_R.html
-
 
 phy <- read.tree("../DATA/phylogeny.analyzed.2016-01-05b.tre") 
 phy$tip.label    #140
