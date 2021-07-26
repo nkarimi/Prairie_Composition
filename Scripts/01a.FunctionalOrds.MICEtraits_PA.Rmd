@@ -1,5 +1,5 @@
 ---
-title: "01a.ordi.plots.MICEtraits"
+title: "01a.FunctionalOrdinations.MICEtraits_PA.Rmd"
 output: html_document
 ---
 ```{r setup, include=FALSE}
@@ -26,7 +26,6 @@ setDT(traits.mat, keep.rownames = "Species")[]
 traits.mat <- traits.mat %>% filter (Species %in% colnames(df.PA[8:ncol(df.PA)]))
 
 #swtich out names:
-
 
 #df.PA <- df.PA %>% select (-c(new.rep, Code))
 
@@ -69,7 +68,6 @@ factor(pa.scores3$fd, levels = c('L', 'H')) -> pa.scores3$fd
 
 ```
 
-#try reoding traits mat
 ```{r}
 traits.mat <- read.csv('../DATA/ImputedMiceTraits.2016-01-06.csv', as.is = T, row.names = 1)
 rownames(traits.mat)[which(rownames(traits.mat) == "Symphyotrichum_novae-angliae")] <-
