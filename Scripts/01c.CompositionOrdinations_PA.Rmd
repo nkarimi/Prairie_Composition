@@ -1,8 +1,7 @@
 ---
-title: "01b.ordi.plot.compositional.space"
+title: "01c.CompositionalOrdinations_PA"
 output: html_document
 ---
-#Shifts in Compositional Space
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
@@ -191,13 +190,10 @@ FIG.mod.fd<- ggplot(mod.fd, aes(x=group, y=distances, fill=group)) + geom_boxplo
 ```
 
 
-#Testing for Convergence/Divergence: Mean Compositional dissimilarity for P/A
-####Plug and Seed
-Comparing mean dissimilarity between years can indicate if plots are converging 
+#Testing for Convergence/Divergence: Mean Compositional dissimilarity for P/A 
 ```{r}
 #P/A Dissimilarity by year
 df.pa.plug.yr <- split(df.pa.plug, df.pa.plug$year) 
-
 dis.matJ.p <- lapply(df.pa.plug.yr, function(x) vegdist(x[8:ncol(x)], method="jaccard"))
 mean.J.p <- unlist(lapply(dis.matJ.p, function(x) mean(x)))
 
@@ -241,11 +237,9 @@ P <- P + labs(x = "year",  y= "dissimilarity ()", color="PD") + theme_bw() +
   geom_errorbar(aes(ymin=lowCI, ymax=highCI), width=.2,
                  position=position_dodge(.1)) 
   
-```
-
 #Confidence Intervals for dissimilarity
-bootstrap original plots without replacement, recalculate diss
-```{r}
+#bootstrap original plots without replacement, recalculate diss
+
 ##Matrices by year and phyD class:
 temp = lapply(split(df.pa.plug, df.pa.plug$year), function(x) split(x, x$phyD) )
 #temp from above bootstrap 
