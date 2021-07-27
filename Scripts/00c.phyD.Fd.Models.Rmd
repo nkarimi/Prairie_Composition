@@ -1,8 +1,8 @@
 ---
-title: "00c.phyD.SR.boxplots"
+title: "00c.phyD.FD.boxplots_and_models"
 output: html_document
 ---
-#SR and PhyD Boxplots similar to Hipp et al. 2018
+#SR, PD, FD Boxplots
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -115,14 +115,9 @@ fitPD <- lmer(PDses ~ phyD + season + year + (1|mix/plot), data=PDses.dat)
 summary(fitPD)
 emmeans(fitPD, pairwise ~ phyD)
 
-#interaction term
-fitPD2 <- glmmTMB(PDses ~ year:phyD + season + (1|mix/plot), data=PDses.dat, family=gaussian)
-summary(fitPD2)
-
 PDses.dat2 <- PDses.dat %>% 
   unite(phyDyear, c("phyD", "year"))
 
-fitPDses <- glmmTMB(PDses ~ phyDyear + (1|mix/plot), data=PDses.dat2, family=gaussian)
 emmeans(fitPDses, pairwise ~ phyDyear)
 
 ggplot(dat.fPD, aes(x=variable, y=value)) + geom_boxplot() + facet_grid(.~phyD) +
@@ -163,8 +158,6 @@ mntd.m$MNTDses <- as.numeric(mntd.m$MNTDses)
 # MODELS 
 fitMNTD1 <- lmer(MNTDses ~ year + phyD + season + (1|mix/plot), data=mntd.m)
 summary(fitMNTD1)
-fitMNTD2 <- glmmTMB(MNTDses ~ year:phyD + (1|mix/plot)+ (1|block), data=mntd.m, family=gaussian)
-
 mntd.m2 <- mntd.m %>% 
   unite(phyDyear, c("phyD", "year"))
 
@@ -239,24 +232,16 @@ FD1 <- lmer(FD ~ year + season + fd + (1|new.rep/plot), data=FDdat) #after testi
 summary(FD1)
 emmeans(FD1, pairwise ~ fd)
 
-FD2 <- glmmTMB(FD ~ year:fd + (1|new.rep/plot), data=FDdat, family=gaussian)
-emmeans(fit2, pairwise ~ year*phyD)
-
 FDdat2 <- FDdat %>% 
   unite(FDyear, c("fd", "year"))
 
-fitFD <- glmmTMB(FD ~ FDyear + (1|new.rep/plot)+ (1|block), data=FDdat2, family=gaussian)
-fitFDsanB <- glmmTMB(FD ~ FDyear + (1|new.rep/plot), data=FDdat2, family=gaussian)
-
+fitFD <- lmer(FD ~ FDyear + (1|new.rep/plot)+ (1|block), data=FDdat2)
 emmeans(fitFDsanB, pairwise ~ FDyear)
-
-
 
 #levels(FDdat$fd) <- c("Low FD", "HighFD", "")
 
 FDisp.plot <- ggplot(FDdat, aes(x=year, y=FD)) + theme_bw() + geom_boxplot()  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) + facet_grid(.~fd, drop=FALSE) + labs(y="FDisp", x="")  
 #
-
  ####################### ####################### ####################### 
 ##FDISP on Abundnace -weighted #######################
 SRobs.cov <- c(dat17$Plug$SR_planted, dat17$Plug$SR_observed, dat18$Plug$SR_observed, dat19$Plug$SR_observed)
