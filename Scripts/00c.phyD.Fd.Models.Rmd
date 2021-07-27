@@ -1,0 +1,290 @@
+---
+title: "00c.phyD.SR.boxplots"
+output: html_document
+---
+#SR and PhyD Boxplots similar to Hipp et al. 2018
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(ggplot2)
+library(FD)
+library(cowplot)
+#library(lme4)
+library(multcompView)
+library(magrittr)
+library(dplyr)
+#library(lmerTest)
+library(glmmTMB)
+library(tidyr)
+```
+
+#Load PD files
+```{r}
+dat17 <- read.csv(file = "../DATA/2017_VegetationCover/cover.matrix.2019-07-16.csv", as.is = TRUE) #original 2017 data plus as.planted WITH SPRING
+dat17$SR_planted <- 15
+dat18.05 <- read.csv(file = "../DATA/2018_VegetationCover/PD.metrics.2018.05.csv", as.is = TRUE) 
+dat18 <- read.csv(file = "../DATA/2018_VegetationCover/PD.metrics.2018.09.csv", as.is = TRUE) 
+dat19.06 <- read.csv(file = "../DATA/2019_VegetationCover/PD.metrics.2019.06.csv", as.is = TRUE)
+dat19 <- read.csv(file = "../DATA/2019_VegetationCover/PD.metrics.2019.09.csv", as.is = TRUE)
+
+factor(dat17$phy, levels = c('L', 'M', 'H')) -> dat17$phy
+dat17.split <- split(dat17, dat17$type)
+dat18.05.split <- split(dat18.05, dat18.05$type)
+dat18.split <- split(dat18, dat18$type)
+dat19.06.split <- split(dat19.06, dat19.06$type)
+dat19.split <- split(dat19, dat19$type)
+```
+
+## SPECIES RICHNESS
+```{r}
+#############SPECIES RICHNESS #######################################
+Srichness <- as.data.frame(cbind("2016"=dat17.split$Plug$SR_planted, "2017"=dat17.split$Plug$SR_observed, "code"=dat17.split$Plug$phyD, "2018.06" = dat18.05.split$Plug$SR_observed, "2018.09"=dat18.split$Plug$SR_observed, "2019.06"= dat19.06.split$Plug$SR_observed, "2019.09"= dat19.split$Plug$SR_observed))
+factor(Srichness$code, levels = c('L', 'M', 'H')) -> Srichness$code
+Srichness.m <- melt(Srichness, id.vars='code', measure.vars=c('2016','2017', "2018.06", '2018.09', "2019.06", "2019.09"))
+as.numeric(as.character(Srichness.m$value)) -> Srichness.m$value
+
+ggplot(Srichness.m, aes(x=variable, y=value)) + geom_boxplot() +facet_grid(.~code) + theme_bw() -> Srichness.plot
+Srichness.plot <- Srichness.plot + labs(y ="SR observed", x="") + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) 
+
+#ggsave(Srichness.plot, file="../OUT/SRplots.pdf", width=180, units = "mm")
+
+```
+#SR by FD class
+```{r}
+#############SPECIES RICHNESS #######################################
+Srichness <- as.data.frame(cbind("planted"=dat17.split$Plug$SR_planted, "2017"=dat17.split$Plug$SR_observed, "FD"=dat17.split$Plug$trtD, "2018.06" = dat18.05.split$Plug$SR_observed, "2018.09"=dat18.split$Plug$SR_observed, "2019.06"= dat19.06.split$Plug$SR_observed, "2019.09"= dat19.split$Plug$SR_observed))
+factor(Srichness$FD, levels = c('L','H')) -> Srichness$FD
+SR.m <- melt(Srichness, id.vars='FD', measure.vars=c('planted','2017', "2018.06", '2018.09', "2019.06", "2019.09"))
+as.numeric(as.character(SR.m$value)) -> SR.m$value
+
+factor(SR.m$FD, levels = c('L','H', ' ')) -> SR.m$FD2
+
+ggplot(SR.m, aes(x=variable, y=value)) + geom_boxplot() + facet_wrap(~FD2,ncol=3,drop=FALSE) + theme_bw() -> SR_FDplot
+
+SR_FDplot <- SR_FDplot + labs(y ="SR observed", x="") + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) 
+
+plot_grid(Srichness.plot, SR_FDplot, labels = "auto", ncol=1) -> Fig2.SR
+Fig2.SR
+#ggsave(SR_FDplot, file="../OUT/Fig2.SRb.pdf")
+
+```
+
+###Faith's PD and PD-ses
+```{r}
+######################Faith's PD
+fPD <- as.data.frame(cbind("planted" = dat17.split$Plug$PD_planted, "2017"= dat17.split$Plug$PD_observed, "phyD"= dat17.split$Plug$phyD, "2018.06"=dat18.05.split$Plug$PD_observed, "2018.09"=dat18.split$Plug$PD_observed, "2019.06" = dat19.06.split$Plug$PD_observed, "2019.09" = dat19.split$Plug$PD_observed))
+
+as.numeric(as.character(fPD$planted)) -> fPD$planted
+as.numeric(as.character(fPD$'2017')) -> fPD$'2017'
+as.numeric(as.character(fPD$'2018.06')) -> fPD$'2018.06'
+as.numeric(as.character(fPD$'2018.09')) -> fPD$'2018.09'
+as.numeric(as.character(fPD$'2019.06')) -> fPD$'2019.06'
+as.numeric(as.character(fPD$'2019.09')) -> fPD$'2019.09'
+
+factor(fPD$phyD, levels = c('L', 'M', 'H')) -> fPD$phyD
+dat.fPD <- melt(fPD, id.vars='phyD', measure.vars=c('planted','2017', "2018.06",'2018.09', "2019.06", "2019.09"))
+
+ggplot(dat.fPD, aes(x=variable, y=value)) +geom_boxplot() +facet_grid(.~phyD) +
+  theme_bw() -> PD.Plot
+PD.Plot <- PD.Plot + labs(
+  x="year",  y ="Faith's PD")  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+
+#ggsave(filename = "../OUT/FaithsPD.Plot.pdf", plot = PD.Plot, height = 4, width=8)
+
+##############PD-ses############################
+PDses <- as.data.frame(cbind("plot" = dat17.split$Plug$plot, "mix" = dat17.split$Plug$sp, "block" = dat17.split$Plug$block, "2016" = dat17.split$Plug$PD_SES_planted, "2017"= dat17.split$Plug$PD_SES_observed,  "phyD"= dat17.split$Plug$phyD, "2018.06"=dat18.05.split$Plug$PD_SES_observed, "2018.09"=dat18.split$Plug$PD_SES_observed, "2019.06" = dat19.06.split$Plug$PD_SES_observed, "2019.09" = dat19.split$Plug$PD_SES_observed))
+
+factor(PDses$phyD, levels = c('L', 'M', 'H')) -> PDses$phyD
+
+PDses.dat <- melt(PDses, id.vars=c("plot", "mix", "block", "phyD"), measure.vars=c('2016','2017', "2018.06", '2018.09', "2019.06", "2019.09"))
+
+names(PDses.dat) <- c("plot","mix", "block","phyD" ,"year", "PDses")
+PDses.dat$season <- ifelse(PDses.dat$year == "2018.06" | PDses.dat$year == "2019.06", "spring", "summer") 
+PDses.dat$year <- as.numeric(PDses.dat$year)
+PDses.dat$PDses <- as.numeric(PDses.dat$PDses)
+#species mixture for random effects
+as.character(PDses.dat$mix) -> PDses.dat$mix
+x <- strsplit(PDses.dat$mix, ".rep", 1)
+PDses.dat$mix <- sapply(x, "[", 1)
+as.factor(PDses.dat$mix) -> PDses.dat$mix
+
+#SR MODELS by class
+#family=gaussian, poisson, nbinom1, truncated_poisson(link = "log")
+fitPD <- lmer(PDses ~ phyD + season + year + (1|mix/plot), data=PDses.dat)
+summary(fitPD)
+emmeans(fitPD, pairwise ~ phyD)
+
+#interaction term
+fitPD2 <- glmmTMB(PDses ~ year:phyD + season + (1|mix/plot), data=PDses.dat, family=gaussian)
+summary(fitPD2)
+
+PDses.dat2 <- PDses.dat %>% 
+  unite(phyDyear, c("phyD", "year"))
+
+fitPDses <- glmmTMB(PDses ~ phyDyear + (1|mix/plot), data=PDses.dat2, family=gaussian)
+emmeans(fitPDses, pairwise ~ phyDyear)
+
+ggplot(dat.fPD, aes(x=variable, y=value)) + geom_boxplot() + facet_grid(.~phyD) +
+  theme_bw() -> PD.Plot
+PD.Plot <- PD.Plot + labs(
+  x="year",  y ="PD_SES")  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+
+#ggsave(filename = "../OUT/FaithsPD-SES.Plot.png", plot = PD.Plot, height = 4, width=8)
+```
+
+
+
+```{r}
+#########################################
+######### MNTD_SES 
+############################################################
+MNTD_SES.phyd <- as.data.frame(cbind("plot" = dat17.split$Plug$plot, "mix" = dat17.split$Plug$sp, "block" = dat17.split$Plug$block, "2016" = dat17.split$Plug$MNTD_SES_planted, "2017"=dat17.split$Plug$MNTD_SES_observed, "phyD"=dat17.split$Plug$phyD,"2018.06"=dat18.05.split$Plug$MNTD_SES_observed, "2018.09"=dat18.split$Plug$MNTD_SES_observed, "2019.06"=dat19.06.split$Plug$MNTD_SES_observed, "2019.09"=dat19.split$Plug$MNTD_SES_observed))
+
+factor(MNTD_SES.phyd$phyD, levels = c('L', 'M', 'H')) -> MNTD_SES.phyd$phyD
+
+mntd.m <- melt(MNTD_SES.phyd, id.vars=c("plot", "mix", "block", "phyD"), measure.vars=c('2016','2017','2018.06',"2018.09" ,"2019.06", "2019.09"))
+
+names(mntd.m) <- c("plot","mix", "block" , "phyD", "year", "MNTDses")
+#as.numeric(as.character(mntd.m$value)) -> mntd.m$value
+mntd.m$season <- ifelse(mntd.m$year == "2018.06" | mntd.m$year == "2019.06", "spring", "summer") 
+as.factor(mntd.m$season) -> mntd.m$season
+mntd.m$year <- as.numeric(mntd.m$year)
+
+#species mixture for random effects
+as.character(mntd.m$mix) -> dat.fPD$mix
+x <- strsplit(mntd.m$mix, ".rep", 1)
+mntd.m$mix <- sapply(x, "[", 1)
+as.factor(mntd.m$mix) -> mntd.m$mix
+as.factor(mntd.m$plot) -> mntd.m$plot
+#as.factor(mntd.m$block) -> mntd.m$block
+mntd.m$MNTDses <- as.numeric(mntd.m$MNTDses)
+
+# MODELS 
+fitMNTD1 <- lmer(MNTDses ~ year + phyD + season + (1|mix/plot), data=mntd.m)
+summary(fitMNTD1)
+fitMNTD2 <- glmmTMB(MNTDses ~ year:phyD + (1|mix/plot)+ (1|block), data=mntd.m, family=gaussian)
+
+mntd.m2 <- mntd.m %>% 
+  unite(phyDyear, c("phyD", "year"))
+
+fitMNTD3 <- glmmTMB(MNTDses ~ phyDyear + (1|mix/plot)+ (1|block), data=mntd.m2, family=gaussian)
+summary(fitMNTD3)
+emmeans(fitMNTD3, pairwise ~ phyDyear)
+
+#PLOT
+#ggplot(mntd.m, aes(x=year, y=MNTDses)) + geom_boxplot() +facet_grid(.~phyD) +
+#  theme_bw() -> MNTD.plot
+#MNTD.plot <- MNTD.plot + labs(y ="MNTD_ses", x="") + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+
+#ggsave(filename = "../OUT/MNTDses.Plug.png", plot = MNTD.plot, height = 4, width=8)
+```
+
+#FUNCTIONAL DIVERSITY (FDIS)
+```{r}
+#load P/A matrix and cover matrices:
+#df.cover and df.PA from 00.load.for.anlyses
+
+#ADD FD to model
+#SRobs <- c(dat17$Plug$SR_planted, dat17$Plug$SR_observed, dat18$Plug$SR_observed, dat19$Plug$SR_observed)
+#df.PA has  year 2016 = as planted
+#df.PA <- df.PA[with(df.PA, order(year, plot)),] # order by year and plot to match SRobs
+#df.PA$SR <- SRobs
+
+#take dat17.split$Seed$MPD_planted and merge by plot#
+#df.PA <- merge(df.PA, dat17[, c("plot")], by="plot")
+#df.PA <- merge(df.PA, dat17[, c("plot", "MNTD_planted")], by="plot")
+#df.PA.copy <- df.PA
+
+#df.PA <- df.PA %>%
+ # select(MNTD_planted, MPD_planted, SR, everything())
+
+#######################FDISP on P/A
+traits.mat <- read.csv('../DATA/ImputedMiceTraits.2016-01-06.csv', as.is = T, row.names = 1)
+rownames(traits.mat)[which(rownames(traits.mat) == "Symphyotrichum_novae-angliae")] <-
+  "Symphyotrichum_novae.angliae"
+rownames(traits.mat) -> traits.mat$Species
+
+MICEtraits.mat <- traits.mat %>% filter (Species %in% colnames(df.PA[8:ncol(df.PA)]))
+MICEtraits.mat$Species -> rownames(MICEtraits.mat)
+MICEtraits.mat <- subset(MICEtraits.mat, select = -Species)
+dist(MICEtraits.mat) -> dis.trait.diss
+as.matrix(df.PA[8:ncol(df.PA)]) -> comm
+
+##Fdisp can include P/A or abudance-weighted.
+
+fdisp(dis.trait.diss, comm, tol = 1e-07) -> fd
+unlist(fd$FDis) -> df.PA$FD
+split(df.PA, df.PA$year) -> fdDF
+#group/order by new.rep/sp
+fdDF$`2019.09` -> fd
+
+FDdat <- subset(df.PA, select= c(plot, year, type, new.rep, fd, FD))
+factor(FDdat$fd, levels = c('L','H')) -> FDdat$fd
+#add block
+as.factor(mntd.m$block) -> FDdat$block
+as.factor(FDdat$new.rep) -> FDdat$new.rep
+as.factor(FDdat$plot) -> FDdat$plot
+as.numeric(as.character(FDdat$year)) -> FDdat$year
+
+FDdat$season <- ifelse(FDdat$year == "2018.06" | FDdat$year == "2019.06", "spring", "summer") 
+
+# MODELS 
+#FD1 <- glmmTMB(FD ~ year + season + fd + (1|new.rep/plot) + (1|block), data=FDdat, family=poisson)
+library("lme4")
+#FD1 <- lmer(FD ~ year + season + fd + (1|new.rep/plot) + (1|block), data=FDdat)
+#above resulted in over-fitting (singlur fit) test without some random effects:
+
+FD1 <- lmer(FD ~ year + season + fd + (1|new.rep/plot), data=FDdat) #after testing remove block
+summary(FD1)
+emmeans(FD1, pairwise ~ fd)
+
+FD2 <- glmmTMB(FD ~ year:fd + (1|new.rep/plot), data=FDdat, family=gaussian)
+emmeans(fit2, pairwise ~ year*phyD)
+
+FDdat2 <- FDdat %>% 
+  unite(FDyear, c("fd", "year"))
+
+fitFD <- glmmTMB(FD ~ FDyear + (1|new.rep/plot)+ (1|block), data=FDdat2, family=gaussian)
+fitFDsanB <- glmmTMB(FD ~ FDyear + (1|new.rep/plot), data=FDdat2, family=gaussian)
+
+emmeans(fitFDsanB, pairwise ~ FDyear)
+
+
+
+#levels(FDdat$fd) <- c("Low FD", "HighFD", "")
+
+FDisp.plot <- ggplot(FDdat, aes(x=year, y=FD)) + theme_bw() + geom_boxplot()  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) + facet_grid(.~fd, drop=FALSE) + labs(y="FDisp", x="")  
+#
+
+ ####################### ####################### ####################### 
+##FDISP on Abundnace -weighted #######################
+SRobs.cov <- c(dat17$Plug$SR_planted, dat17$Plug$SR_observed, dat18$Plug$SR_observed, dat19$Plug$SR_observed)
+
+#df.PA has  year 2016 = as planted
+#df.cover = 2017, 
+df.cover2 <- df.cover[with(df.cover, order(year, plot)),] # order by year and plot to match SRobs
+df.cover2$SR <- SRobs.cov
+
+##Fdisp can include P/A or abudance-weighted.
+as.matrix(df.cover2[8:(ncol(df.cover2))]) -> commAB
+fdisp(dis.trait.diss, commAB, tol = 1e-07) -> fd.ab
+unlist(fd.ab$FDis) -> df.cover2$FD
+split(df.cover2, df.cover2$year) -> fdAW.DF
+#group/order by new.rep/sp
+fdAW.DF$`2019.09` -> fdaw
+
+
+###PLOT
+FD.AW.dat <- subset(df.cover2, select= c(year, type, fd, FD))
+factor(FD.AW.dat$fd, levels = c('L','H')) -> FD.AW.dat$fd
+levels(FD.AW.dat$fd) <- c("Low FD", "HighFD", "")
+
+FDispAW.plot <- ggplot(FD.AW.dat, aes(x=year, y=FD)) + theme_bw() + geom_boxplot()  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) + facet_grid(.~fd, drop=FALSE) + labs(y="aw FDisp", x="")  
+#
+```
+
+```{r}
+plot_grid(PD.Plot, MNTD.plot, MPD.Plot, FDisp.plot, FDispAW.plot, ncol=1, labels="auto") -> FigS1.PDboxplots
+#ggsave(Fig2.SR_PhyD.png, file="../OUT/Fig2.SR_PhyD.pdf")
+```
